@@ -1,0 +1,121 @@
+group 'com.quorum'
+version '1.0-SNAPSHOT'
+
+apply plugin: 'java'
+apply plugin: 'pmd'
+apply plugin: 'idea'
+
+sourceCompatibility = 1.8
+targetCompatibility = 1.8
+
+buildscript {
+    repositories { jcenter() }
+    dependencies {
+        classpath 'com.github.jengelman.gradle.plugins:shadow:1.2.2'
+    }
+}
+
+apply plugin: 'com.github.johnrengelman.shadow'
+apply plugin: 'maven-publish'
+apply plugin: 'ivy-publish'
+
+
+shadowJar {
+    baseName = project.name + '-all'
+    classifier = ''
+
+    exclude '**/com/example/**'
+    exclude '**/com/quorum/AbstractServer.*'
+    exclude '**/com/quorum/Election.*'
+    exclude '**/com/quorum/QuorumPeer.*'
+    exclude '**/com/quorum/QuorumServer.*'
+    exclude '**/com/quorum/Vote.*'
+    exclude '**/com/quorum/flexible/QuorumVerifier.*'
+    exclude '**/com/quorum/netty/X509Exception.*'
+    exclude '**/com/quorum/netty/X509Util.*'
+    exclude '**/com/quorum/util/Async*'
+    exclude '**/com/quorum/util/Certficiate*'
+    exclude '**/com/quorum/util/QuorumPeer.*'
+    exclude '**/com/quorum/util/QuorumSocketFactory.*'
+    exclude '**/com/quorum/util/ZKX509TrustManager.*'
+    exclude '**log4j2.xml'
+
+    dependencies {
+        exclude(dependency('org.apache.logging.log4j:.*'))
+        exclude(dependency('org.slf4j:.*'))
+    }
+
+    relocate 'com.common', 'org.apache.zookeeper.common'
+    relocate 'com.quorum', 'org.apache.zookeeper.server.quorum'
+    relocate 'io.netty', 'org.apache.zookeeper.server.quorum.io.netty'
+}
+
+publishing {
+    publications {
+        shadow(MavenPublication) {
+            from components.shadow
+            artifactId = project.name + '-all'
+        }
+    }
+}
+
+//create a single Jar with all dependencies
+task fatJar(type: Jar) {
+    manifest {
+        attributes 'Implementation-Title': 'Gradle Jar File Example',
+                'Implementation-Version': version,
+                'Main-Class': 'com.mkyong.DateUtils'
+    }
+    baseName = project.name + '-all'
+    from { configurations.compile.collect { it.isDirectory() ? it : zipTree(it) } }
+    with jar
+}
+
+repositories {
+    mavenCentral()
+    jcenter()
+    mavenLocal()
+}
+
+pmd {
+    toolVersion = '5.4.0'
+    ignoreFailures = false
+    sourceSets = [sourceSets.main]
+    reportsDir = file("$project.buildDir/reports/pmd")
+    ruleSets = [
+            "java-basic",
+            "java-braces"
+    ]
+}
+// add CPD to check
+check << {
+    File outDir = new File('build/reports/pmd/')
+    outDir.mkdirs()
+    ant.taskdef(name: 'cpd', classname: 'net.sourceforge.pmd.cpd.CPDTask',
+            classpath: configurations.pmd.asPath)
+    ant.cpd(minimumTokenCount: '100', format: 'xml',
+            outputFile: new File(outDir , 'cpd.xml')) {
+        fileset(dir: "src/main/java") {
+            include(name: '**/*.java')
+        }
+    }
+}
+
+dependencies {
+    compile group: 'org.apache.logging.log4j', name: 'log4j-slf4j-impl', version: '2.4.1'
+    compile group: 'org.apache.logging.log4j', name: 'log4j-api', version: '2.4.1'
+    compile group: 'org.apache.logging.log4j', name: 'log4j-core', version: '2.4.1'
+    compile group: 'io.netty', name: 'netty-all', version: '4.1.0.Beta8'
+    compile group: 'org.apache.commons', name: 'commons-lang3', version: '3.4+'
+    testCompile group: 'junit', name: 'junit', version: '4.12'
+}
+
+test {
+    // set JVM arguments for the test JVM(s)
+    jvmArgs '-Dlog4j.debug'
+
+    testLogging {
+        // Show that tests are run in the command-line output
+        events 'started', 'passed'
+    }
+}

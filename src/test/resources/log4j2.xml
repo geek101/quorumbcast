@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Configuration status="WARN">
+    <Appenders>
+        <Console name="CONSOLE" target="SYSTEM_OUT">
+            <PatternLayout pattern="%d{HH:mm:ss.SSS} [%t] %-5level %logger{36} - %msg%n" />
+        </Console>
+    </Appenders>
+    <Loggers>
+        <Root level="WARN">
+            <AppenderRef ref="CONSOLE"/>
+        </Root>
+        <logger name="io.netty.handler.ssl.SslHandler" level="INFO" />
+        <logger name="com.quorum.netty.VotingChannelMgr" level="WARN" />
+        <logger name="com.quorum.netty.NettyChannelMgr" level="INFO" />
+        <logger name="com.quorum.netty.VotingClientChannel" level="INFO" />
+        <logger name="com.quorum.netty.VotingServerChannel" level="INFO" />
+        <logger name="com.quorum.netty.VotingChannel" level="INFO" />
+        <logger name="com.quorum.netty.NettyChannel" level="INFO" />
+        <logger name="com.quorum.nio.SelectorDispatch" level="INFO" />
+    </Loggers>
+</Configuration>

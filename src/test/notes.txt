@@ -1,0 +1,22 @@
+# Create CA
+openssl req -x509 -new -config x509ca/openssl.cnf -days 365 -out x509ca/ca/new_ca.pem -keyout x509ca/ca/new_ca_pk.pem
+
+# Import CA to truststore
+keytool -import -file x509ca/ca/new_ca.pem -alias ca -keystore x509ca/java/truststore.jks -storepass StorePass
+
+keytool -genkey -keyalg RSA -keysize 2048 -dname "CN=node1, C=US" -validity 365 -alias node1 -keypass CertPassword -keystore node1.jks -storepass CertPassword
+
+# Export sign request
+keytool -certreq -alias node1 -file x509ca/java/node1_csr.pem -keypass CertPassword -keystore x509ca/java/node1.jks -storepass CertPassword
+
+# Sign the cert
+openssl ca -config x509ca/openssl.cnf -days 365 -in x509ca/java/node1_csr.pem -out x509ca/java/node1.pem
+
+# Convert to PEM
+openssl x509 -in x509ca/java/node1.pem -out x509ca/java/node1.pem -outform PEM
+
+# Concat CA and this PEM
+cat x509ca/java/node1.pem x509ca/ca/new_ca.pem > x509ca/java/node1.chain
+
+# Update keystore with the chain
+keytool -import -file x509ca/java/node1.chain -keypass CertPassword -keystore x509ca/java/node1.jks -storepass CertPassword

@@ -1,0 +1,452 @@
+/**
+ * Licensed to the Apache Software Foundation (ASF) under one
+ * or more contributor license agreements.  See the NOTICE file
+ * distributed with this work for additional information
+ * regarding copyright ownership.  The ASF licenses this file
+ * to you under the Apache License, Version 2.0 (the
+ * "License"); you may not use this file except in compliance
+ * with the License.  You may obtain a copy of the License at
+ *
+ *     http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+package org.apache.zookeeper.server.quorum;
+
+import org.apache.zookeeper.jmx.MBeanRegistry;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
+import java.util.ArrayList;
+import java.util.Collection;
+import java.util.HashMap;
+import java.util.HashSet;
+import java.util.Iterator;
+import java.util.Map;
+import java.util.concurrent.ExecutionException;
+import java.util.concurrent.TimeUnit;
+
+/**
+ * Created by powell on 12/24/15.
+ */
+public class FastLeaderElectionV2 implements Election {
+    private static final Logger LOG = LoggerFactory.getLogger(FastLeaderElection.class);
+
+    /**
+     * Determine how much time a process has to wait
+     * once it believes that it has reached the end of
+     * leader election.
+     */
+    final static int finalizeWaitMsec = 1000;
+
+    private final QuorumPeer quorumPeer;
+    private final VoteView voteView;
+    private VoteViewConsumer voteViewConsumer;
+    volatile boolean stop;  /// Why is this volatile?
+
+
+    public FastLeaderElectionV2(final QuorumPeer quorumPeer,
+                                final VoteView voteView) {
+        this.quorumPeer = quorumPeer;
+        this.voteView = voteView;
+        this.stop = true;
+    }
+
+    public void shutdown() {
+        throw new UnsupportedOperationException("not implemeted");
+    }
+
+    /**
+     * Check if a pair (server id, zxid) succeeds our
+     * current vote.
+     *
+     * @param other Peer vote
+     * @param selfVote our vote
+     * @return true/false
+     */
+    protected boolean totalOrderPredicate(final Vote other,
+                                          final Vote selfVote) {
+        LOG.debug("id: " + other.getLeader() +
+                ", proposed id: " + selfVote.getLeader() + "," +
+                " zxid: 0x" + Long.toHexString(other.getZxid()) +
+                ", proposed zxid: " + "0x" +
+                Long.toHexString(selfVote.getZxid()));
+        if(quorumPeer.getQuorumVerifier()
+                .getWeight(other.getLeader()) == 0) {
+            return false;
+        }
+
+        final long newEpoch = other.getPeerEpoch();
+        final long newZxid = other.getZxid();
+        final long newLeader = other.getLeader();
+        final long curEpoch = selfVote.getPeerEpoch();
+        final long curZxid = selfVote.getZxid();
+        final long curLeader = selfVote.getLeader();
+        /*
+         * We return true if one of the following three cases hold:
+         * 1- New epoch is higher
+         * 2- New epoch is the same as current epoch, but new zxid is higher
+         * 3- New epoch is the same as current epoch, new zxid is the same
+         *  as current zxid, but server id is higher.
+         */
+        return ((newEpoch > curEpoch) ||
+                ((newEpoch == curEpoch) &&
+                        ((newZxid > curZxid) ||
+                                ((newZxid == curZxid) &&
+                                        (newLeader > curLeader)))));
+    }
+
+    /**
+     * Termination predicate. Given a set of votes, determines if
+     * have sufficient to declare the end of the election round.
+     *
+     *  @param votes    Set of votes
+     *  @param vote     And our new vote
+     */
+    protected boolean termPredicate(
+            HashMap<Long, Vote> votes,
+            Vote vote) {
+
+        HashSet<Long> set = new HashSet<Long>();
+
+        /*
+         * First make the views consistent. Sometimes peers will have
+         * different zxids for a server depending on timing.
+         */
+        for (Map.Entry<Long,Vote> entry : votes.entrySet()) {
+            if (vote.equals(entry.getValue())){
+                set.add(entry.getKey());
+            }
+        }
+
+        return quorumPeer.getQuorumVerifier().containsQuorum(set);
+    }
+
+    /**
+     * In the case there is a leader elected, and a quorum supporting
+     * this leader, we have to check if the leader has voted and acked
+     * that it is leading. We need this check to avoid that peers keep
+     * electing over and over a peer that has crashed and it is no
+     * longer leading.
+     *
+     * @param votes set of votes
+     * @param v current vote
+     */
+    protected boolean checkLeader(HashMap<Long, Vote> votes, final Vote v) {
+        boolean predicate = true;
+
+        /*
+         * If everyone else thinks I'm the leader, I must be the leader.
+         * The other two checks are just for the case in which I'm not the
+         * leader. If I'm not the leader and I haven't received a message
+         * from leader stating that it is leading, then predicate is false.
+         */
+        if(v.getLeader() != quorumPeer.getId()){
+            if(votes.get(v.getLeader()) == null) predicate = false;
+            else if(votes.get(v.getLeader()).getState() !=
+                    QuorumPeer.ServerState.LEADING) predicate = false;
+        } else if(voteView.getSelfVote().getElectionEpoch() !=
+                v.getElectionEpoch()) {
+            predicate = false;
+        }
+
+        return predicate;
+    }
+
+    /**
+     * This predicate checks that a leader has been elected. It doesn't
+     * make a lot of sense without context (check lookForLeader) and it
+     * has been separated for testing purposes.
+     *
+     * @param recv  map of received votes
+     * @param ooe   map containing out of election votes (LEADING or FOLLOWING)
+     * @param v    Vote
+     * @return
+     */
+    protected boolean ooePredicate(HashMap<Long,Vote> recv,
+                                   HashMap<Long,Vote> ooe,
+                                   final Vote v) {
+        return (termPredicate(recv, v)
+                && checkLeader(ooe, v));
+
+    }
+
+    /**
+     * Starts a new round of leader election. Whenever our QuorumPeer
+     * changes its state to LOOKING, this method is invoked, and it
+     * sends notifications to all other peers.
+     */
+    public Vote lookForLeader()
+            throws InterruptedException, ExecutionException {
+        enterLeaderLoop();
+        registerJmxBean();
+
+        if (quorumPeer.start_fle == 0) {
+            quorumPeer.start_fle = System.currentTimeMillis();
+        }
+
+        try {
+            // Update our logical clock and send update to all peers.
+            voteView.increaseElectionEpoch();
+
+            LOG.info("New election. My id =  " + quorumPeer.getId() +
+                    ", proposed zxid=0x" +
+                    Long.toHexString(voteView.getSelfVote().getZxid()));
+
+            return lookForLeaderLoop(finalizeWaitMsec, TimeUnit.MILLISECONDS);
+        } finally {
+            unregisterJmxBean();
+            exitLeaderLoop();
+        }
+    }
+
+    private Vote lookForLeaderLoop(int timeout, TimeUnit unit) throws
+            InterruptedException, ExecutionException {
+        /*
+         * Loop till we find a stable leader.
+         */
+        while ((quorumPeer.getPeerState()
+                == QuorumPeer.ServerState.LOOKING) && (!stop)) {
+            Collection<Vote> votes = voteViewConsumer.poll(timeout, unit);
+            if (votes == null) {
+                LOG.info("Notification time out: " + timeout);
+            } else {
+                Collection<Vote> drainVotes = voteViewConsumer.poll(1, unit);
+                while(drainVotes != null) {
+                    votes = drainVotes;
+                    drainVotes = voteViewConsumer.poll(500,
+                            TimeUnit.MICROSECONDS);
+                }
+
+                // process a view change for leader
+                Vote endVote = processVoteView(votes);
+                if (endVote != null) {
+                    // We have leader, wait for timeout/2
+                    // for stability check.
+                    final Vote currentEndVote =
+                            stableVoteCheck(timeout/2, unit, endVote);
+                    if (currentEndVote != null) {
+                        return currentEndVote;
+                    }
+                }
+            }
+        }
+        return null;
+    }
+
+    private Vote stableVoteCheck(int timeout, TimeUnit unit,
+                                 final Vote currentEndVote)
+            throws InterruptedException, ExecutionException {
+        Collection<Vote> votes = voteViewConsumer.poll(timeout, unit);
+        if (votes == null) {
+            LOG.info("Stable Vote Check Timeout: " + timeout);
+            return currentEndVote;
+        } else {
+            Collection<Vote> drainVotes = voteViewConsumer.poll(1, unit);
+            while(drainVotes != null) {
+                votes = drainVotes;
+                drainVotes = voteViewConsumer.poll(500,
+                        TimeUnit.MICROSECONDS);
+            }
+            Vote endVote = processVoteView(votes);
+            if (endVote != null && currentEndVote.equals(endVote)) {
+                return endVote;
+            } else {
+                return null;
+            }
+        }
+    }
+
+    /**
+     * A run for each change of view
+     * @param votes
+     * @return null on failure or Vote on election of Leader
+     */
+    private Vote processVoteView(final Collection<Vote> votes)
+            throws InterruptedException, ExecutionException {
+        HashMap<Long, Vote> recvset = new HashMap<Long, Vote>();
+        HashMap<Long, Vote> outofelection = new HashMap<Long, Vote>();
+
+        Iterator<Vote> it = null;
+
+        // case 1: Consider LEADING && FOLLOWING
+        it = votes.iterator();
+        while(it.hasNext()) {
+            final Vote vote = it.next();
+            if ((vote.getState() == QuorumPeer.ServerState.LEADING ||
+                    vote.getState() == QuorumPeer.ServerState.FOLLOWING)) {
+                printAddingVote(vote, "outofelection");
+                outofelection.put(vote.getSid(), vote);
+                // check for case 1
+                if (ooePredicate(outofelection, outofelection, vote)) {
+                    voteView.setElectionEpoch(vote);
+                    setQuorumPeerState();
+                    leaveInstance(vote);
+                    return vote;
+                }
+            }
+        }
+
+        // Case 2: LOOKING && electionEpoch is same.
+        it = votes.iterator();
+        while(it.hasNext()) {
+            final Vote vote = it.next();
+            if (vote.getState() == QuorumPeer.ServerState.LOOKING
+                    && vote.getElectionEpoch() ==
+                    voteView.getSelfVote().getElectionEpoch()) {
+                if (totalOrderPredicate(vote, voteView.getSelfVote())) {
+                    voteView.catchUpToVote(vote);
+                }
+
+                // Do not store our vote.
+                if (voteView.getSelfVote().getSid() != vote.getSid()) {
+                    printAddingVote(vote, "recv");
+                    recvset.put(vote.getSid(), vote);
+                }
+            }
+        }
+
+        // Let us give preference to case 3 before finishing up 2.
+        // We will continue to use the recvset updated above.
+
+        // Case 3: Consider LEADING && FOLLOWING && electionEpoch is same
+        it = votes.iterator();
+        while(it.hasNext()) {
+            final Vote vote = it.next();
+            if ((vote.getState() == QuorumPeer.ServerState.LEADING ||
+                    vote.getState() == QuorumPeer.ServerState.FOLLOWING)
+                    && vote.getElectionEpoch() ==
+                    voteView.getSelfVote().getElectionEpoch()) {
+                printAddingVote(vote, "recv");
+                recvset.put(vote.getSid(), vote);
+                // check for case 3
+                if (ooePredicate(recvset, outofelection, vote)) {
+                    setQuorumPeerState();
+                    leaveInstance(voteView.getSelfVote());
+                    return vote;
+                }
+            }
+        }
+
+        // Check for Case 2.
+        if (termPredicate(recvset, voteView.getSelfVote())) {
+            setQuorumPeerState();
+            leaveInstance(voteView.getSelfVote());
+            return voteView.getSelfVote();
+        }
+
+        // Case 4: LOOKING && electionEpoch is higher
+        it = votes.iterator();
+        while(it.hasNext()) {
+            final Vote vote = it.next();
+            if (vote.getState() == QuorumPeer.ServerState.LOOKING
+                    && vote.getElectionEpoch() >
+                    voteView.getSelfVote().getElectionEpoch()) {
+                voteView.setElectionEpoch(vote);
+                if (totalOrderPredicate(vote, voteView.getSelfVote())) {
+                    voteView.catchUpToVote(vote);
+                }
+
+                // Ok we updated self so that stops infinite recursion,
+                // Now start with a clean slate and try once.
+                return processVoteView(votes);
+            }
+        }
+
+        return null;
+    }
+
+    private void enterLeaderLoop() {
+        if (!stop) {
+            throw new RuntimeException("shutdown leader before " +
+                    "starting again!");
+        }
+        this.voteViewConsumer = this.voteView.createChangeConsumer();
+        stop = false;
+    }
+
+    private void exitLeaderLoop() {
+        if (stop) {
+            throw new RuntimeException("start leader before " +
+                    "shutting it down!");
+        }
+
+        if (this.voteView != null && this.voteViewConsumer != null) {
+            this.voteView.removeConsumer(this.voteViewConsumer);
+        }
+
+        stop = true;
+    }
+
+    private void setQuorumPeerState() {
+        quorumPeer.setPeerState((voteView.getSelfVote().getLeader()
+                == quorumPeer.getId()) ?
+                QuorumPeer.ServerState.LEADING: learningState());
+    }
+
+    /**
+     * A learning state can be either FOLLOWING or OBSERVING.
+     * This method simply decides which one depending on the
+     * role of the server.
+     *
+     * @return ServerState
+     */
+    private QuorumPeer.ServerState learningState() {
+        if(quorumPeer.getLearnerType() == QuorumPeer.LearnerType.PARTICIPANT){
+            LOG.debug("I'm a participant: " + quorumPeer.getId());
+            return QuorumPeer.ServerState.FOLLOWING;
+        }
+        else{
+            LOG.debug("I'm an observer: " + quorumPeer.getId());
+            return QuorumPeer.ServerState.OBSERVING;
+        }
+    }
+
+    private void leaveInstance(Vote v) {
+        if(LOG.isDebugEnabled()){
+            LOG.debug("About to leave FLE instance: leader="
+                    + v.getLeader() + ", zxid=0x" +
+                    Long.toHexString(v.getZxid()) + ", my id=" +
+                    quorumPeer.getId()
+                    + ", my state=" + quorumPeer.getPeerState());
+        }
+    }
+
+    private void printAddingVote(final Vote v, final String setName) {
+        if(LOG.isDebugEnabled()) {
+            LOG.debug("Adding vote to set: " + setName + ": from="
+                    + v.getSid() + ", proposed leader=" + v.getLeader() +
+                    ", proposed zxid=0x" + Long.toHexString(v.getZxid()) +
+                    ", proposed election epoch=0x" +
+                    Long.toHexString(v.getElectionEpoch()));
+        }
+    }
+
+    private void registerJmxBean() {
+        try {
+            quorumPeer.jmxLeaderElectionBean = new LeaderElectionBean();
+            MBeanRegistry.getInstance().register(
+                    quorumPeer.jmxLeaderElectionBean,
+                    quorumPeer.jmxLocalPeerBean);
+        } catch (Exception e) {
+            LOG.warn("Failed to register with JMX", e);
+            quorumPeer.jmxLeaderElectionBean = null;
+        }
+    }
+
+    private void unregisterJmxBean() {
+        try {
+            if(quorumPeer.jmxLeaderElectionBean != null){
+                MBeanRegistry.getInstance().unregister(
+                        quorumPeer.jmxLeaderElectionBean);
+            }
+        } catch (Exception e) {
+            LOG.warn("Failed to unregister with JMX", e);
+        }
+        quorumPeer.jmxLeaderElectionBean = null;
+    }
+}
