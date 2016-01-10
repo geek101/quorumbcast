@@ -180,30 +180,10 @@ public abstract class AbstractEnsemble implements Ensemble {
     public void verifyLeader() {
         final HashMap<Long, Vote> resultVotes = getLeaderLoopResult();
         final HashMap<Long, HashSet<Long>> leaderQuorumMap = new HashMap<>();
-        for (final Map.Entry<Long, Vote> entry : resultVotes.entrySet()) {
-            final Vote v = entry.getValue();
-            assertTrue("vote not null", v != null);
-            if (v.getPeerEpoch() != safteyPred.getLeft() ||
-                    v.getZxid() != safteyPred.getRight()) {
-                final String errStr = "leader vote : " + v + " failed"
-                        + " saftey check peerEpoch: 0x" + Long.toHexString
-                        (safteyPred.getLeft()) + ", Zxid: 0x"
-                        + Long.toHexString(safteyPred.getRight());
-                assertEquals(errStr, safteyPred.getLeft().longValue(),
-                        v.getPeerEpoch());
-                assertEquals(errStr, safteyPred.getRight().longValue(),
-                        v.getZxid());
-            }
-            if (!leaderQuorumMap.containsKey(v.getLeader())) {
-                leaderQuorumMap.put(v.getLeader(),
-                        new HashSet<>(
-                                Collections.singletonList(entry.getKey())));
-            } else {
-                leaderQuorumMap.get(v.getLeader()).add(entry.getKey());
-            }
-        }
+        verifySafetyPredicate(resultVotes);
 
         for (final FLEV2Wrapper fle : fles.values()) {
+            verifySafetyPredicate(fle.getSelfVote());
             if (!leaderQuorumMap.containsKey(fle.getSelfVote().getLeader())) {
                 leaderQuorumMap.put(fle.getSelfVote().getLeader(),
                         new HashSet<>(
@@ -216,8 +196,8 @@ public abstract class AbstractEnsemble implements Ensemble {
         verifyThisAsLeader(leaderQuorumMap);
     }
 
-    public void verifyThisAsLeader(final HashMap<Long, HashSet<Long>>
-                                           leaderQuorumMap) {
+    public void verifyThisAsLeader(
+            final HashMap<Long, HashSet<Long>> leaderQuorumMap) {
         int max = Integer.MIN_VALUE;
         long secondBestLeaderSid = Integer.MIN_VALUE;
         long bestLeaderSid = Integer.MIN_VALUE;
@@ -227,7 +207,6 @@ public abstract class AbstractEnsemble implements Ensemble {
                 max = entry.getValue().size();
                 secondBestLeaderSid = bestLeaderSid;
                 bestLeaderSid = entry.getKey();
-
             }
         }
 
@@ -246,7 +225,29 @@ public abstract class AbstractEnsemble implements Ensemble {
                     (secondBestLeaderSid)
                     + " best leader: " + bestLeaderSid + " with " +
                     "majority quorum: " + leaderQuorumMap.get(bestLeaderSid);
+            printAllVotes();
             LOG.warn(errStr);
+        }
+    }
+
+    private void verifySafetyPredicate(final HashMap<Long, Vote> voteMap) {
+        for (final Vote v : voteMap.values()) {
+            verifySafetyPredicate(v);
+        }
+    }
+
+    private void verifySafetyPredicate(final Vote vote) {
+        assertTrue("vote not null", vote != null);
+        if (vote.getPeerEpoch() != safteyPred.getLeft() ||
+                vote.getZxid() != safteyPred.getRight()) {
+            final String errStr = "leader vote : " + vote + " failed"
+                    + " saftey check peerEpoch: 0x" + Long.toHexString
+                    (safteyPred.getLeft()) + ", Zxid: 0x"
+                    + Long.toHexString(safteyPred.getRight());
+            assertEquals(errStr, safteyPred.getLeft().longValue(),
+                    vote.getPeerEpoch());
+            assertEquals(errStr, safteyPred.getRight().longValue(),
+                    vote.getZxid());
         }
     }
 

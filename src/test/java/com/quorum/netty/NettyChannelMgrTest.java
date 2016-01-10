@@ -19,6 +19,7 @@ package com.quorum.netty;
 
 import com.common.X509Util;
 import com.quorum.AbstractServer;
+import com.quorum.helpers.PortAssignment;
 import com.quorum.helpers.netty.MockChannel;
 import com.quorum.util.ChannelException;
 import io.netty.channel.EventLoopGroup;
@@ -42,9 +43,6 @@ import static com.common.X509Exception.KeyManagerException;
 import static com.common.X509Exception.TrustManagerException;
 import static org.junit.Assert.*;
 
-/**
- * Created by powell on 12/7/15.
- */
 public class NettyChannelMgrTest extends BaseTest {
     private static final Logger LOG = LoggerFactory.getLogger
             (QuorumBroadcastTest.class);
@@ -70,7 +68,7 @@ public class NettyChannelMgrTest extends BaseTest {
             NoSuchAlgorithmException, KeyManagerException,
             TrustManagerException  {
         final InetSocketAddress listenAddr
-                = new InetSocketAddress("localhost", 47474);
+                = new InetSocketAddress("localhost", PortAssignment.unique());
         final ClassLoader cl = getClass().getClassLoader();
 
         final MockChannel testHandler = new MockChannel() {
@@ -160,7 +158,7 @@ public class NettyChannelMgrTest extends BaseTest {
             NoSuchAlgorithmException, KeyManagerException,
             TrustManagerException {
         final InetSocketAddress listenAddr
-                = new InetSocketAddress("localhost", 57575);
+                = new InetSocketAddress("localhost", PortAssignment.unique());
         final ClassLoader cl = getClass().getClassLoader();
 
         final MockChannel testHandler = new MockChannel() {

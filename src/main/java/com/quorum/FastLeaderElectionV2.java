@@ -172,6 +172,7 @@ public class FastLeaderElectionV2 implements Election {
         // Start with just our vote.
         Collection<Vote> votes = Collections.singletonList(selfVote);
         while (true) {
+            // Get leader vote and self vote with election epoch updated.
             final ImmutablePair<Vote, Vote> leaderElectedAndSelfVote =
                     lookForLeaderLoop(consumer, CONSUME_WAIT_MSEC,
                             TimeUnit.MILLISECONDS, votes);
@@ -183,23 +184,30 @@ public class FastLeaderElectionV2 implements Election {
             votes = leaderStabilityCheckLoop(consumer, stableTimeout,
                     stableTimeoutUnit, leaderElectedAndSelfVote.getLeft());
             if (votes == null) {
-                // We are done, catch up to leader vote and break the loop.
-                QuorumPeer.ServerState targetState
-                        = (leaderElectedAndSelfVote.getLeft().getLeader()
-                        == getId()) ?
-                        QuorumPeer.ServerState.LEADING : learningState();
-
-                final Vote finalVote
-                        = leaderElectedAndSelfVote.getRight().
-                        catchUpToLeaderVote(leaderElectedAndSelfVote.getLeft(),
-                                targetState);
-                updateSelfVote(finalVote);
+                final Vote selfFinalVote
+                        = catchUpToLeaderBeforeExit(
+                        leaderElectedAndSelfVote.getLeft(),
+                        leaderElectedAndSelfVote.getRight());
                 voteViewConsumerCtrl.removeConsumer(consumer);
-                return finalVote;
+                return selfFinalVote;
             }
 
             LOG.info("leader stability failed, trying again");
         }
+    }
+
+    protected Vote catchUpToLeaderBeforeExit(final Vote leaderVote,
+                                             final Vote selfVote)
+            throws InterruptedException, ExecutionException {
+        // We are done, catch up to leader vote and break the loop.
+        QuorumPeer.ServerState targetState
+                = (leaderVote.getLeader() == getId()) ?
+                QuorumPeer.ServerState.LEADING : learningState();
+
+        final Vote finalVote = selfVote.
+                catchUpToLeaderVote(leaderVote, targetState);
+        updateSelfVote(finalVote).get();
+        return finalVote;
     }
 
     /**
@@ -229,8 +237,8 @@ public class FastLeaderElectionV2 implements Election {
 
             // If leader is found return the leader vote and updated self vote.
             if (leaderAndEpochUpdatedVotes.getLeft() != null) {
-                return ImmutablePair.of(leaderAndEpochUpdatedVotes.getLeft(),
-                        selfVote);
+                return ImmutablePair.of(
+                        leaderAndEpochUpdatedVotes.getLeft(), selfVote);
             }
 
             // No success try again, This set of votes contain the updated
@@ -717,6 +725,7 @@ public class FastLeaderElectionV2 implements Election {
      * @param vote vote that requested this leader.
      * @return true if elected leader is sane.
      */
+    @Deprecated
     protected boolean checkLeader(HashMap<Long, Vote> voteMap,
                                   final Vote vote) {
         boolean predicate = true;

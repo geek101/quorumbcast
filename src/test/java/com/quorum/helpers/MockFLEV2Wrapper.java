@@ -30,11 +30,30 @@ public class MockFLEV2Wrapper extends AbstractFLEV2Wrapper {
         this.voteViewChange = voteViewChange;
     }
 
+    /**
+     * Run one loop of election epoch update and leader election and return
+     * the elected vote along with the collection of votes which will contain
+     * our self vote updated to election epoch.
+     * Update self vote to follow the leader.
+     * @param votes
+     * @return Leader elected vote and set of votes with our vote with
+     * election epoch updated.
+     * @throws ElectionException
+     * @throws InterruptedException
+     * @throws ExecutionException
+     */
     @Override
     public ImmutablePair<Vote, Collection<Vote>> lookForLeaderLoopUpdateHelper(
             final Collection<Vote> votes)
             throws ElectionException, InterruptedException, ExecutionException {
-        return super.lookForLeaderLoopUpdateHelper(votes);
+        final ImmutablePair<Vote, Collection<Vote>> pair
+                = super.lookForLeaderLoopUpdateHelper(votes);
+        // Update our vote if leader is non null
+        if (pair.getLeft() != null) {
+            updateSelfVote(catchUpToLeaderBeforeExit(pair.getLeft(),
+                    getSelfVote())).get();
+        }
+        return ImmutablePair.of(pair.getLeft(), pair.getRight());
     }
 
     @Override

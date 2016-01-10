@@ -19,6 +19,7 @@ package com.quorum.netty;
 
 import com.common.X509Exception;
 import com.quorum.QuorumServer;
+import com.quorum.helpers.PortAssignment;
 import com.quorum.util.AsyncClientSocket;
 import org.junit.After;
 import org.junit.Before;
@@ -51,11 +52,14 @@ public class QuorumSocketFactoryTest extends BaseTest {
             = LoggerFactory.getLogger(QuorumSocketFactoryTest.class);
 
     private final QuorumServer listenServer
-            = new QuorumServer(1, new InetSocketAddress("localhost", 38888));
+            = new QuorumServer(1, new InetSocketAddress("localhost",
+            PortAssignment.unique()));
     private final QuorumServer client1
-            = new QuorumServer(2, new InetSocketAddress("localhost", 45555));
+            = new QuorumServer(2, new InetSocketAddress("localhost",
+            PortAssignment.unique()));
     private final QuorumServer client2
-            = new QuorumServer(3, new InetSocketAddress("localhost", 46666));
+            = new QuorumServer(3, new InetSocketAddress("localhost",
+            PortAssignment.unique()));
 
     @Before
     public void setup() {

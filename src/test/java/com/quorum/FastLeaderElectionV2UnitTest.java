@@ -103,7 +103,7 @@ public class FastLeaderElectionV2UnitTest {
      * @throws InterruptedException
      * @throws ExecutionException
      */
-    @Test (timeout = 1000*600)
+    @Test (timeout = 1000*300)
     public void testLeaderForCombinations()
             throws ElectionException, InterruptedException, ExecutionException {
         long count = 0;

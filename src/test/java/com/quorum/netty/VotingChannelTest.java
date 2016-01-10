@@ -20,6 +20,7 @@ package com.quorum.netty;
 import com.common.X509Exception;
 import com.quorum.QuorumServer;
 import com.quorum.Vote;
+import com.quorum.helpers.PortAssignment;
 import com.quorum.util.Callback;
 import com.quorum.util.Callback2;
 import com.quorum.util.ChannelException;
@@ -56,7 +57,8 @@ public class VotingChannelTest extends BaseTest {
 
     QuorumServer listenServer;
     private final QuorumServer client1
-            = new QuorumServer(2, new InetSocketAddress("localhost", 61111));
+            = new QuorumServer(2, new InetSocketAddress("localhost",
+            PortAssignment.unique()));
 
     private final ConcurrentLinkedQueue<Long> inboundSidQueue
             = new ConcurrentLinkedQueue<>();
@@ -97,7 +99,8 @@ public class VotingChannelTest extends BaseTest {
     public void testClientChannelHdrSend() throws IOException, X509Exception,
             NoSuchAlgorithmException, InterruptedException {
         ImmutablePair<VotingClientChannel, Socket> pair
-                = clientChannelConnectHdrAssert(51111, client1);
+                = clientChannelConnectHdrAssert(
+                PortAssignment.unique(), client1);
 
         pair.getRight().close();
         pair.getLeft().close();
@@ -109,7 +112,8 @@ public class VotingChannelTest extends BaseTest {
     public void testClientChannelVoteRead() throws IOException, X509Exception,
             NoSuchAlgorithmException, InterruptedException {
         ImmutablePair<VotingClientChannel, Socket> pair
-                = clientChannelConnectHdrAssert(52222, client1);
+                = clientChannelConnectHdrAssert(
+                PortAssignment.unique(), client1);
 
         Socket socket = pair.getRight();
         // Send a Vote and check if we receive that.
@@ -125,7 +129,7 @@ public class VotingChannelTest extends BaseTest {
     public void testServerChannelHdrRead() throws IOException, X509Exception,
             NoSuchAlgorithmException, InterruptedException, ChannelException {
         listenServer = new QuorumServer(1,
-                new InetSocketAddress("localhost", 53333));
+                new InetSocketAddress("localhost", PortAssignment.unique()));
 
         ChannelFuture listenFuture = startListenAndConnectClient(listenServer);
 
@@ -160,7 +164,7 @@ public class VotingChannelTest extends BaseTest {
             X509Exception, NoSuchAlgorithmException, InterruptedException,
             ChannelException {
         listenServer = new QuorumServer(4,
-                new InetSocketAddress("localhost", 54444));
+                new InetSocketAddress("localhost", PortAssignment.unique()));
         ChannelFuture listenFuture;
         Socket socket;
         ByteBuf hdrBuf = buildHdr(client1.id(), client1.getElectionAddr());
@@ -192,7 +196,8 @@ public class VotingChannelTest extends BaseTest {
     public void testVoteSendTwoTimes() throws IOException, X509Exception,
             NoSuchAlgorithmException, InterruptedException, ChannelException {
         ImmutableTriple<VotingClientChannel, Socket, Vote> triple
-                = clientChannelConnectHdrAndVoteAssert(55555, client1);
+                = clientChannelConnectHdrAndVoteAssert(
+                PortAssignment.unique(), client1);
 
         final VotingClientChannel votingClientChannel = triple.getLeft();
         final Socket socket = triple.getMiddle();
@@ -225,7 +230,8 @@ public class VotingChannelTest extends BaseTest {
             throws IOException, X509Exception, NoSuchAlgorithmException,
             InterruptedException {
         ImmutablePair<VotingClientChannel, Socket> pair
-                = clientChannelConnectHdrAssert(56666, client1);
+                = clientChannelConnectHdrAssert(
+                PortAssignment.unique(), client1);
 
         VotingClientChannel votingClientChannel = pair.getLeft();
         Socket socket = pair.getRight();
@@ -254,7 +260,7 @@ public class VotingChannelTest extends BaseTest {
             X509Exception, NoSuchAlgorithmException, InterruptedException,
             ChannelException {
         listenServer = new QuorumServer(1,
-                new InetSocketAddress("localhost", 57777));
+                new InetSocketAddress("localhost", PortAssignment.unique()));
         ChannelFuture listenFuture;
         Socket socket;
         ByteBuf hdrBuf = buildHdr(client1.id(), client1.getElectionAddr());
@@ -279,7 +285,8 @@ public class VotingChannelTest extends BaseTest {
     public void testChannelKeepAliveTimeout() throws IOException, X509Exception,
             NoSuchAlgorithmException, InterruptedException, ChannelException {
         ImmutableTriple<VotingClientChannel, Socket, Vote> triple
-                = clientChannelConnectHdrAndVoteAssert(58888, client1, 100L, 3);
+                = clientChannelConnectHdrAndVoteAssert(
+                PortAssignment.unique(), client1, 100L, 3);
 
         final VotingClientChannel votingClientChannel = triple.getLeft();
         final Socket socket = triple.getMiddle();
@@ -300,7 +307,8 @@ public class VotingChannelTest extends BaseTest {
             throws IOException, X509Exception, NoSuchAlgorithmException,
             InterruptedException, ChannelException {
         ImmutableTriple<VotingClientChannel, Socket, Vote> triple
-                = clientChannelConnectHdrAndVoteAssert(59999, client1, 100L, 3);
+                = clientChannelConnectHdrAndVoteAssert(
+                PortAssignment.unique(), client1, 100L, 3);
 
         final VotingClientChannel votingClientChannel = triple.getLeft();
         final Socket socket = triple.getMiddle();

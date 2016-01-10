@@ -18,6 +18,7 @@
 package com.quorum.netty;
 
 import com.quorum.QuorumServer;
+import com.quorum.helpers.PortAssignment;
 import com.quorum.helpers.netty.*;
 import com.quorum.util.ChannelException;
 import io.netty.buffer.ByteBuf;
@@ -58,7 +59,7 @@ public class NettyChannelTest extends BaseTest {
     @Test(timeout = 1000)
     public void testConnectTimeout() throws InterruptedException {
         final QuorumServer q = new QuorumServer(1,
-                new InetSocketAddress("localhost", 61111));
+                new InetSocketAddress("localhost", PortAssignment.unique()));
 
         class TimeoutHandler extends MockChannel {
             public boolean connectTimeoutTriggered = false;
@@ -104,7 +105,7 @@ public class NettyChannelTest extends BaseTest {
     public void testReadTimeout()
             throws InterruptedException, ChannelException {
         final QuorumServer q = new QuorumServer(1,
-                new InetSocketAddress("localhost", 62222));
+                new InetSocketAddress("localhost", PortAssignment.unique()));
 
         class TimeoutHandler extends MockChannel {
             public boolean readTimeoutTriggered = false;
@@ -174,7 +175,7 @@ public class NettyChannelTest extends BaseTest {
     @Test (timeout = 1000)
     public void testHdrTxRx() throws Exception {
         final String hdrToSend = "HelloHdr!";
-        int port = 44444;
+        int port = PortAssignment.unique();
         final InetSocketAddress listenAddr
                 = new InetSocketAddress("localhost", port);
         QuorumServer q = new QuorumServer(1, listenAddr);;
@@ -221,7 +222,7 @@ public class NettyChannelTest extends BaseTest {
     public void testDataTxRx() throws Exception {
         final String hdrToSend = "HelloHdr!";
         final String dataToSend = "FooBar";
-        int port = 63333;
+        int port = PortAssignment.unique();
         final InetSocketAddress listenAddr
                 = new InetSocketAddress("localhost", port);
         QuorumServer q = new QuorumServer(1, listenAddr);;
@@ -299,7 +300,7 @@ public class NettyChannelTest extends BaseTest {
         final int keepAliveCount = 3;
         final String hdrToSend = "HelloHdr!";
         final String dataToSend = "FooBar";
-        int port = 64444;
+        int port = PortAssignment.unique();
         final InetSocketAddress listenAddr
                 = new InetSocketAddress("localhost", port);
         QuorumServer q = new QuorumServer(1, listenAddr);;
@@ -404,7 +405,7 @@ public class NettyChannelTest extends BaseTest {
         final int keepAliveCount = 3;
         final String hdrToSend = "HelloHdr!";
         final String dataToSend = "FooBar";
-        int port = 64445;
+        int port = PortAssignment.unique();
         final InetSocketAddress listenAddr
                 = new InetSocketAddress("localhost", port);
         QuorumServer q = new QuorumServer(1, listenAddr);;

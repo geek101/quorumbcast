@@ -3,6 +3,7 @@ package com.quorum.netty;
 import com.common.X509Exception;
 import com.quorum.QuorumServer;
 import com.quorum.Vote;
+import com.quorum.helpers.PortAssignment;
 import com.quorum.util.Callback;
 import com.quorum.util.ChannelException;
 import io.netty.buffer.ByteBuf;
@@ -71,8 +72,10 @@ public class VotingChannelMgrTest extends BaseTest {
                 // EndSid
                 //{ "plain", 15555, 0L, 0L, 0L, 0, 1L, 99L},
                 //{ "ssl", 25555, 0L, 0L, 0L, 0, 100L, 199L},
-                { "plain", 5555, 100, 10, 100L, 3, 200L, 299L},
-                { "ssl", 25555, 100L, 10L, 100L, 3, 300L, 399L},
+                { "plain", PortAssignment.unique(), 100, 10, 100L, 3, 200L,
+                        299L},
+                { "ssl", PortAssignment.unique(), 100L, 10L, 100L, 3, 300L,
+                        399L},
     });}
 
     public VotingChannelMgrTest(final String type, final int listenAddr,
@@ -92,10 +95,10 @@ public class VotingChannelMgrTest extends BaseTest {
 
         listenServer = new QuorumServer(this.sidRunning++,
                 new InetSocketAddress("localhost",
-                        listenAddr + random.nextInt(15000)));
+                        PortAssignment.unique()));
         client1 = new QuorumServer(this.sidRunning++,
                 new InetSocketAddress(
-                        "localhost", listenAddr +random.nextInt(15000)));
+                        "localhost", PortAssignment.unique()));
     }
 
     @Before
@@ -147,7 +150,8 @@ public class VotingChannelMgrTest extends BaseTest {
         mgrInit();
 
         Socket clientSocket = connectAndAssert(client1, listenServer);
-        writeBufToSocket(buildHdr(client1.id(), client1.getElectionAddr()), clientSocket);
+        writeBufToSocket(buildHdr(client1.id(), client1.getElectionAddr()),
+                clientSocket);
 
         socketIsClosed(clientSocket);
     }
@@ -186,7 +190,8 @@ public class VotingChannelMgrTest extends BaseTest {
         Socket clientSocket = connectAndAssert(client1, listenServer);
 
         // Send the hdr
-        writeBufToSocket(buildHdr(client1.id(), client1.getElectionAddr()), clientSocket);
+        writeBufToSocket(buildHdr(client1.id(), client1.getElectionAddr()),
+                clientSocket);
 
         boolean closedCheck = false;
         // Ensure the previous incoming channel is closed.

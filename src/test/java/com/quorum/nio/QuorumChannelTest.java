@@ -18,6 +18,7 @@ package com.quorum.nio;
 import com.quorum.QuorumServer;
 import com.quorum.Vote;
 import com.quorum.helpers.MockMsgChannel;
+import com.quorum.helpers.PortAssignment;
 import com.quorum.helpers.QuorumChannelWrapper;
 import com.quorum.nio.msghelper.ReadRemainer;
 import com.quorum.util.Callback;
@@ -57,7 +58,7 @@ public class QuorumChannelTest {
     private final Long acceptId = 1L;  // Lower so does not close.
     private SelectorDispatch selectorDispatch = null;
     private final String listenHost = "localhost";
-    private int listenPortStart = 5555;
+    private int listenPortStart = PortAssignment.unique();
     private int listenPort;
     private InetSocketAddress listenAddr = null;
     private List<MsgChannel> acceptedChannels = new LinkedList<>();
@@ -108,7 +109,8 @@ public class QuorumChannelTest {
     @Before
     public void setUp() throws IOException {
         try {
-            listenPort = listenPortStart + random.nextInt(45555);
+            listenPort = listenPortStart +
+                    random.nextInt(PortAssignment.unique());
             this.listenAddr = new InetSocketAddress(
                     InetAddress.getByName(listenHost),
                     listenPort);

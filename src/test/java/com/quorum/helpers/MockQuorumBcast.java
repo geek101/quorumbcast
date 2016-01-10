@@ -61,13 +61,7 @@ public class MockQuorumBcast implements QuorumBroadcast {
                 // rx other peer votes.
                 if (sid != voteView.getId() &&
                         voteViewMap.get(sid) != null) {
-                    try {
-                        voteView.msgRx(voteViewMap.get(sid)
-                                .getSelfVote()).get();
-                    } catch (InterruptedException | ExecutionException exp) {
-                        LOG.error("failed to update vote, unhandled exp: " + exp);
-                        throw new RuntimeException(exp);
-                    }
+                    voteView.msgRx(voteViewMap.get(sid).getSelfVote());
                 }
             }
 
