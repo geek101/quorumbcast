@@ -48,7 +48,7 @@ public abstract class ZKTimerTask<T> implements Callable<T> {
 
     private void stop_() {
         if (!stopped) {
-            LOG.warn("Stopping timer.");
+            LOG.info("Stopping timer.");
             stopped = true;
             if (timeoutFuture != null) {
                 timeoutFuture.cancel(true);

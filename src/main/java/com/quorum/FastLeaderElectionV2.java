@@ -89,7 +89,7 @@ public class FastLeaderElectionV2 implements Election {
                     return true;
                 }
             }
-            return false;
+            return lastVotesMap.size() < votes.size();
         }
     }
 
@@ -99,9 +99,15 @@ public class FastLeaderElectionV2 implements Election {
     private class LeaderStabilityPredicate extends
             Predicate<Collection<Vote>> {
         private final Vote electedLeaderVote;
+        private final Map<Long, Vote> lastVotesMap;
 
-        public LeaderStabilityPredicate(final Vote electedLeaderVote) {
+        public LeaderStabilityPredicate(final Vote electedLeaderVote,
+                                        final Collection<Vote> lastVotes) {
             this.electedLeaderVote = electedLeaderVote;
+            lastVotesMap = new HashMap<>();
+            for (final Vote v : lastVotes) {
+                lastVotesMap.put(v.getSid(), v);
+            }
         }
 
         /**
@@ -113,6 +119,19 @@ public class FastLeaderElectionV2 implements Election {
          */
         @Override
         public Boolean call(final Collection<Vote> votes) {
+            boolean votesChanged = false;
+            for (final Vote v : votes) {
+                if (!lastVotesMap.containsKey(v.getSid()) ||
+                        !lastVotesMap.get(v.getSid()).match(v)) {
+                    votesChanged = true;
+                    break;
+                }
+            }
+
+            if (!votesChanged && lastVotesMap.size() < votes.size()) {
+                return false;
+            }
+
             final Vote stabilityCheckElectionVote
                     = lookForLeaderLoopHelper(votes).getLeft();
             if (stabilityCheckElectionVote == null ||
@@ -123,10 +142,10 @@ public class FastLeaderElectionV2 implements Election {
                 } else {
                     LOG.info("broke stability for null vote");
                 }
-                LOG.info("was stable for leader: " + this.electedLeaderVote);
                 return true;
             }
 
+            LOG.info("was stable for leader: " + this.electedLeaderVote);
             return false;
         }
     }
@@ -182,12 +201,14 @@ public class FastLeaderElectionV2 implements Election {
 
             // Found a Vote, verify stability
             votes = leaderStabilityCheckLoop(consumer, stableTimeout,
-                    stableTimeoutUnit, leaderElectedAndSelfVote.getLeft());
+                    stableTimeoutUnit, leaderElectedAndSelfVote.getLeft(),
+                    leaderElectedAndSelfVote.getRight(), votes);
             if (votes == null) {
                 final Vote selfFinalVote
                         = catchUpToLeaderBeforeExit(
                         leaderElectedAndSelfVote.getLeft(),
                         leaderElectedAndSelfVote.getRight());
+                LOG.info("elected leader, self vote: " + selfFinalVote);
                 voteViewConsumerCtrl.removeConsumer(consumer);
                 return selfFinalVote;
             }
@@ -206,7 +227,7 @@ public class FastLeaderElectionV2 implements Election {
 
         final Vote finalVote = selfVote.
                 catchUpToLeaderVote(leaderVote, targetState);
-        updateSelfVote(finalVote).get();
+        updateSelfVote(finalVote);
         return finalVote;
     }
 
@@ -386,13 +407,16 @@ public class FastLeaderElectionV2 implements Election {
             }
 
             if (vote.getElectionEpoch() >= selfVote.getElectionEpoch()) {
-                if (LOG.isDebugEnabled()) {
-                    LOG.debug("Found better or equal Election Epoch Vote: " +
-                            vote);
+                if (vote.getElectionEpoch() >= selfVote.getElectionEpoch()) {
+                    if (LOG.isDebugEnabled()) {
+                        LOG.debug("Found better or equal Election Epoch Vote: "
+                                + vote);
+                    }
+                    selfVote = selfVote.setElectionEpoch(vote);
                 }
-                selfVote = selfVote.setElectionEpoch(vote);
                 if (totalOrderPredicate(vote, selfVote)) {
-                    LOG.debug("Found better Total Order Predicate: " + vote);
+                    LOG.debug("Found better Election epoch and Total Order " +
+                            "Predicate: " + vote);
                     selfVote = updateProposal(vote, selfVote);
                 }
             }
@@ -708,6 +732,52 @@ public class FastLeaderElectionV2 implements Election {
     }
 
     /**
+     * In the case there is a leader elected, and a quorum supporting
+     * this leader, we have to check if the leader has voted and acked
+     * that it is leading. We need this check to avoid that peers keep
+     * electing over and over a peer that has crashed and it is no
+     * longer leading.
+     *
+     * @param voteMap    set of votes
+     * @param vote vote that points to a leader
+     */
+    protected boolean checkLeader(
+            final Map<Long, Vote> voteMap,
+            final Vote vote) {
+
+        boolean predicate = true;
+
+        /*
+         * If everyone else thinks I'm the leader, I must be the leader.
+         * The other two checks are just for the case in which I'm not the
+         * leader. If I'm not the leader and I haven't received a message
+         * from leader stating that it is leading, then predicate is false.
+         */
+
+        if (vote.getLeader() != getId()) {
+            if (voteMap.get(vote.getLeader()) == null) {
+                LOG.debug("Ignore non existent leader, Vote: " + vote);
+                predicate = false;
+            } else if (voteMap.get(vote.getLeader()).getLeader() !=
+                    voteMap.get(vote.getLeader()).getSid() ||
+                    voteMap.get(vote.getLeader()).getState()
+                            != QuorumPeer.ServerState.LEADING) {
+                LOG.debug("Ignore leader that did not elect itself, Vote: "
+                        + vote + " leader vote: "
+                        + voteMap.get(vote.getLeader()));
+                predicate = false;
+            }
+        } else if (voteMap.get(getId()).getElectionEpoch()
+                != vote.getElectionEpoch()) {
+            LOG.debug("we cannot be leader, election epoch mismatch, Vote: "
+                    + vote);
+            predicate = false;
+        }
+
+        return predicate;
+    }
+
+    /**
      * Selected leader should be visible and should consider itself
      * as leader a
      * @param leaderVote
@@ -776,11 +846,15 @@ public class FastLeaderElectionV2 implements Election {
      */
     private Collection<Vote> leaderStabilityCheckLoop(
             final VoteViewChangeConsumer consumer, final int timeout,
-            final TimeUnit unit, final Vote leaderElectedVote)
+            final TimeUnit unit, final Vote leaderElectedVote,
+            final Vote selfUpdatedVote, final Collection<Vote> lastVotes)
             throws ElectionException, InterruptedException, ExecutionException {
         NotNull.check(leaderElectedVote, "leader vote is null", LOG);
+        final Collection<Vote> lastVotesUpdated = getUpdatedCollection(
+                lastVotes, selfUpdatedVote);
         return consumer.consume(timeout, unit,
-                getLeaderStabilityPredicate(leaderElectedVote));
+                getLeaderStabilityPredicate(leaderElectedVote,
+                        lastVotesUpdated));
     }
 
     /**
@@ -790,49 +864,11 @@ public class FastLeaderElectionV2 implements Election {
      * @return
      */
     protected LeaderStabilityPredicate getLeaderStabilityPredicate(
-            final Vote leaderElectedVote) {
-        return new LeaderStabilityPredicate(leaderElectedVote);
+            final Vote leaderElectedVote, final Collection<Vote> lastVotes) {
+        return new LeaderStabilityPredicate(leaderElectedVote, lastVotes);
     }
 
-    /**
-     * In the case there is a leader elected, and a quorum supporting
-     * this leader, we have to check if the leader has voted and acked
-     * that it is leading. We need this check to avoid that peers keep
-     * electing over and over a peer that has crashed and it is no
-     * longer leading.
-     *
-     * @param voteMap    set of votes
-     * @param vote vote that points to a leader
-     */
-    protected boolean checkLeader(
-            final Map<Long, Vote> voteMap,
-            final Vote vote) {
 
-        boolean predicate = true;
-
-        /*
-         * If everyone else thinks I'm the leader, I must be the leader.
-         * The other two checks are just for the case in which I'm not the
-         * leader. If I'm not the leader and I haven't received a message
-         * from leader stating that it is leading, then predicate is false.
-         */
-
-        if (vote.getLeader() != getId()) {
-            if (voteMap.get(vote.getLeader()) == null) {
-                predicate = false;
-            } else if (voteMap.get(vote.getLeader()).getLeader() !=
-                    voteMap.get(vote.getLeader()).getSid() ||
-                    voteMap.get(vote.getLeader()).getState()
-                            != QuorumPeer.ServerState.LEADING) {
-                predicate = false;
-            }
-        } else if (voteMap.get(getId()).getElectionEpoch()
-                != vote.getElectionEpoch()) {
-            predicate = false;
-        }
-
-        return predicate;
-    }
 
     /**
      * Check if a pair (server id, zxid) succeeds our

@@ -254,15 +254,17 @@ public abstract class VotingChannel extends NettyChannel<Long> {
 
         // Handle case where we are asked to send same message again.
         if (checkForSameVote(vote)) {
-            LOG.debug("asked to send same vote again: " + vote);
+            if (LOG.isDebugEnabled()) {
+                LOG.debug("asked to send same vote again: " + vote);
+            }
             return true;
         }
 
-        LOG.debug("Sending msg: " + vote);
+        LOG.info("Sending msg: " + vote);
         super.sendMsg(vote);
 
         // Store the last message sent.
-        voteSent = vote;
+        voteSent = vote.copy();
         return true;
     }
 

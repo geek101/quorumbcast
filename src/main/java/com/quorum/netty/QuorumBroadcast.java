@@ -106,7 +106,7 @@ public class QuorumBroadcast implements com.quorum.QuorumBroadcast {
         }
     }
 
-    public void shutdown() {
+    public void shutdown() throws InterruptedException {
         synchronized (this) {
             if (!isShutdown) {
                 channelMgr.shutdown();

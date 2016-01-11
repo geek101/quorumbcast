@@ -14,6 +14,7 @@ import java.util.HashMap;
 import java.util.Iterator;
 import java.util.Stack;
 import java.util.concurrent.ExecutionException;
+import java.util.concurrent.Future;
 
 public interface Ensemble {
     Ensemble runLooking() throws InterruptedException,
@@ -34,7 +35,7 @@ public interface Ensemble {
     HashMap<Long, Vote> getLeaderLoopResult();
 
     void verifyLeader();
-    void shutdown();
+    Future<?> shutdown();
     FLEV2Wrapper disconnect(final long serverSid) throws ElectionException;
     FLEV2Wrapper connect(final long serverSid) throws ElectionException;
     boolean isConnected(final long serverSid);

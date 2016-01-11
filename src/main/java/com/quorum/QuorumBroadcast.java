@@ -74,7 +74,7 @@ public interface QuorumBroadcast {
     /**
      * API to shutdown the listener and incoming messages.
      */
-    void shutdown();
+    void shutdown() throws InterruptedException;
 
     /**
      * API for NIO case, not implemented for Netty case.

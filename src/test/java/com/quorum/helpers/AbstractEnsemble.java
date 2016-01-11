@@ -1,3 +1,18 @@
+/**
+ * Licensed to the Apache Software Foundation (ASF) under one
+ * or more contributor license agreements.  See the NOTICE file
+ * distributed with this work for additional information
+ * regarding copyright ownership.  The ASF licenses this file
+ * to you under the Apache License, Version 2.0 (the
+ * "License"); you may not use this file except in compliance
+ * with the License.  You may obtain a copy of the License at
+ * <p>http://www.apache.org/licenses/LICENSE-2.0</p>
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
 package com.quorum.helpers;
 
 import com.quorum.ElectionException;
@@ -17,6 +32,7 @@ import java.util.HashMap;
 import java.util.HashSet;
 import java.util.Map;
 import java.util.Random;
+import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.Future;
@@ -120,6 +136,7 @@ public abstract class AbstractEnsemble implements Ensemble {
         return id;
     }
 
+    @Override
     public int getQuorumSize() {
         return quorumSize;
     }
@@ -131,6 +148,7 @@ public abstract class AbstractEnsemble implements Ensemble {
         return state;
     }
 
+    @Override
     public FLEV2Wrapper getFleToRun() {
         return this.fleToRun;
     }
@@ -162,7 +180,9 @@ public abstract class AbstractEnsemble implements Ensemble {
      * @return
      */
     public abstract Ensemble createEnsemble(
-            final Ensemble parentEnsemble) throws ElectionException;
+            final Ensemble parentEnsemble,
+            final Collection<ImmutablePair<Long, QuorumPeer.ServerState>>
+            quorumWithState) throws ElectionException;
 
     protected abstract FLEV2Wrapper createFLEV2(
             final long sid, final QuorumVerifier quorumVerifier);
@@ -177,13 +197,12 @@ public abstract class AbstractEnsemble implements Ensemble {
      * be elected.
      * @return
      */
+    @Override
     public void verifyLeader() {
         final HashMap<Long, Vote> resultVotes = getLeaderLoopResult();
         final HashMap<Long, HashSet<Long>> leaderQuorumMap = new HashMap<>();
-        verifySafetyPredicate(resultVotes);
 
         for (final FLEV2Wrapper fle : fles.values()) {
-            verifySafetyPredicate(fle.getSelfVote());
             if (!leaderQuorumMap.containsKey(fle.getSelfVote().getLeader())) {
                 leaderQuorumMap.put(fle.getSelfVote().getLeader(),
                         new HashSet<>(
@@ -217,6 +236,11 @@ public abstract class AbstractEnsemble implements Ensemble {
             LOG.error(errStr);
             printAllVotes();
             assertTrue(errStr, false);
+        }
+
+        // Verify safety of votes for the quorum that is moving forward
+        for (final Long sid : leaderQuorumMap.get(bestLeaderSid)) {
+            verifySafetyPredicate(fles.get(sid).getSelfVote());
         }
 
         if (secondBestLeaderSid != Integer.MIN_VALUE) {
@@ -271,6 +295,7 @@ public abstract class AbstractEnsemble implements Ensemble {
         return true;
     }
 
+    @Override
     public HashMap<Long, Vote> getLeaderLoopResult() {
         // if already called once return stored result.
         if (!lookingResultVotes.isEmpty()) {
@@ -291,8 +316,10 @@ public abstract class AbstractEnsemble implements Ensemble {
         return lookingResultVotes;
     }
 
-    public void shutdown() {
+    @Override
+    public Future<?> shutdown() {
         shutdown(fles.values());
+        return CompletableFuture.completedFuture(null);
     }
 
     /**
@@ -339,7 +366,7 @@ public abstract class AbstractEnsemble implements Ensemble {
         }
 
         final AbstractEnsemble childEnsemble
-                = (AbstractEnsemble) createEnsemble(this);
+                = (AbstractEnsemble) createEnsemble(this, quorumWithState);
         childEnsemble.configureFromParent(quorumWithState);
         childEnsemble.verifyLookingVotes();
         this.children.add(childEnsemble);
@@ -473,7 +500,7 @@ public abstract class AbstractEnsemble implements Ensemble {
             final AbstractEnsemble ensemble) throws ElectionException,
             InterruptedException, ExecutionException {
         final AbstractEnsemble childEnsemble
-                = (AbstractEnsemble)createEnsemble(ensemble);
+                = (AbstractEnsemble)createEnsemble(ensemble, null);
         childEnsemble.copyFromParent();
         return childEnsemble;
     }
@@ -602,7 +629,7 @@ public abstract class AbstractEnsemble implements Ensemble {
      * @return
      * @throws ElectionException
      */
-    private Collection<FLEV2Wrapper> getQuorumWithInitVoteSet(
+    public Collection<FLEV2Wrapper> getQuorumWithInitVoteSet(
             final long size, final QuorumVerifier quorumVerifier)
             throws ElectionException {
         final Collection<Vote> votes =

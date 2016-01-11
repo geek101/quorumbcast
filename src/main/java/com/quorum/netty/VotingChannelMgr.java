@@ -64,7 +64,7 @@ public class VotingChannelMgr extends NettyChannelMgr {
     private ZKTimerTask<Void> timerTask;
 
     private boolean started = false;
-    private Vote currentVote = null;
+    private volatile Vote currentVote = null;
 
     // Object for the concurrent hashmap.
     private class ChannelHolder {
@@ -207,7 +207,7 @@ public class VotingChannelMgr extends NettyChannelMgr {
     /**
      * API to shutdown
      */
-    public void shutdown() {
+    public void shutdown() throws InterruptedException {
         synchronized (this) {
             if (started) {
                 super.shutdown();
@@ -281,7 +281,7 @@ public class VotingChannelMgr extends NettyChannelMgr {
      */
     public void sendVote(final Vote vote) {
         NotNull.check(vote, "Cannot accept null for Vote", LOG);
-        this.currentVote = vote;
+        this.currentVote = vote.copy();
         sendVoteAsync();
     }
 
@@ -508,7 +508,7 @@ public class VotingChannelMgr extends NettyChannelMgr {
 
     private void sendVoteToAll() {
         // If there exists a message to send then send it.
-        Vote vote = currentVote;
+        final Vote vote = currentVote.copy();
         if (vote == null) {
             return;
         }

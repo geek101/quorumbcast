@@ -60,7 +60,7 @@ public class MockVoteView extends VoteViewChange implements
             final Collection<Vote> votes = new ArrayList<>();
             for (final Vote v : voteMap.values()) {
                 if (((MockQuorumBcast)mockQuorumBcast)
-                        .connectionExists(getId(), v.getSid())) {
+                        .connected(getId(), v.getSid())) {
                     votes.add(v);
                 }
             }

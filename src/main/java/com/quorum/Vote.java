@@ -201,7 +201,7 @@ public class Vote {
     }
 
     public String toString() {
-        return String.format("(leader:%d, zxid:%s, sid:%d, peerEpoch:%s, " +
+        return String.format("(leader:%d, zxid:0x%s, sid:%d, peerEpoch:0x%s, " +
                 "electionEpoch:%d, state:%s)",
                 leader,
                 Long.toHexString(zxid),
@@ -272,7 +272,7 @@ public class Vote {
      */
     public ByteBuf buildMsg() {
         return Vote.buildMsg(
-                QuorumPeer.ServerState.LOOKING.ordinal(), this.leader, this.zxid,
+                this.state.ordinal(), this.leader, this.zxid,
                 this.electionEpoch, this.peerEpoch, this.sid, this.version);
     }
 

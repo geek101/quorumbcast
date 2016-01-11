@@ -19,6 +19,8 @@ package com.quorum;
 
 import com.quorum.helpers.Ensemble;
 import com.quorum.helpers.EnsembleFactory;
+import com.quorum.helpers.PortAssignment;
+import com.quorum.netty.BaseTest;
 import org.apache.commons.lang3.tuple.ImmutablePair;
 import org.apache.commons.lang3.tuple.ImmutableTriple;
 import org.junit.Before;
@@ -28,8 +30,11 @@ import org.junit.runners.Parameterized;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import java.net.InetSocketAddress;
+import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collection;
+import java.util.List;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.TimeUnit;
 
@@ -37,13 +42,18 @@ import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertTrue;
 
 @RunWith(Parameterized.class)
-public class FastLeaderElectionV2UnitTest {
+public class FastLeaderElectionV2UnitTest extends BaseTest {
     private static final Logger LOG
             = LoggerFactory.getLogger(FastLeaderElectionV2UnitTest.class);
     private String ensembleType;
     private final int quorumSize;
     private final int stableTimeout;
     private final TimeUnit stableTimeoutUnit;
+    private final List<QuorumServer> quorumServerList = new ArrayList<>();
+    private final Long readTimeoutMsec = 100L;
+    private final Long connectTimeoutMsec = 500L;
+    private final Long keepAliveTimeoutMsec = 50L;
+    private final Integer keepAliveCount = 3;
 
     @Parameterized.Parameters
     public static Collection quorumTypeAndSize() {
@@ -53,6 +63,7 @@ public class FastLeaderElectionV2UnitTest {
                 { "mock", 7, 1, TimeUnit.MILLISECONDS },
                 { "mockbcast", 3, 50, TimeUnit.MILLISECONDS},
                 { "mockbcast", 5, 50, TimeUnit.MILLISECONDS},
+                { "quorumbcast", 3, 150, TimeUnit.MILLISECONDS},
         });
     }
 
@@ -64,6 +75,14 @@ public class FastLeaderElectionV2UnitTest {
         this.quorumSize = quorumSize;
         this.stableTimeout = stableTimeout;
         this.stableTimeoutUnit = stableTimeUnit;
+        for (long sid = 1; sid <= quorumSize; sid++) {
+            final QuorumServer quorumServer = new QuorumServer(sid,
+                    new InetSocketAddress("localhost",
+                            PortAssignment.unique()),
+                    new InetSocketAddress("localhost",
+                            PortAssignment.unique()));
+            this.quorumServerList.add(quorumServer);
+        }
     }
 
     @Before
@@ -82,17 +101,16 @@ public class FastLeaderElectionV2UnitTest {
     @Test
     public void testLeaderElectionFromInitLookingSet()
             throws ElectionException, InterruptedException, ExecutionException {
-        Ensemble ensemble = EnsembleFactory.createEnsemble(
-                this.ensembleType, 1L, this.quorumSize, this.stableTimeout,
-                this.stableTimeoutUnit).configure(getInitLookingQuorumStr());
+        Ensemble ensemble = createEnsemble(1L)
+                .configure(getInitLookingQuorumStr());
         final Collection<Ensemble> lookingSet = ensemble.moveToLookingForAll();
         for (final Ensemble e : lookingSet) {
             final Ensemble result = e.runLooking();
             result.verifyLeader();
-            result.shutdown();
-            e.shutdown();
+            result.shutdown().get();
+            e.shutdown().get();
         }
-        ensemble.shutdown();
+        ensemble.shutdown().get();
     }
 
     /**
@@ -107,9 +125,7 @@ public class FastLeaderElectionV2UnitTest {
     public void testLeaderForCombinations()
             throws ElectionException, InterruptedException, ExecutionException {
         long count = 0;
-        Ensemble ensemble = EnsembleFactory.createEnsemble(
-                this.ensembleType, 1L, this.quorumSize, this.stableTimeout,
-                this.stableTimeoutUnit);
+        Ensemble ensemble = createEnsemble(1L);
         final Collection<Collection<Collection<
                 ImmutablePair<Long, QuorumPeer.ServerState>>>> combs =
                 ensemble.quorumMajorityWithLeaderServerStateCombinations();
@@ -135,35 +151,12 @@ public class FastLeaderElectionV2UnitTest {
                 count);
     }
 
-    @Test
-    public void testLeaderForFiveLeaderLooking()
-        throws ElectionException, InterruptedException, ExecutionException {
-        final Ensemble ensemble = EnsembleFactory.createEnsemble(
-                "mockbcast", 1L, 5, 50, TimeUnit.MILLISECONDS);
-        final Ensemble parentEnsemble
-                = ensemble.configure("{1F,2F,3K,4F,5L}");
-        final Ensemble movedEnsemble
-                = parentEnsemble.moveToLooking(5);
-        final Ensemble doneEnsemble
-                = movedEnsemble.runLooking();
-        LOG.info("verified " + parentEnsemble + "->" + movedEnsemble
-                + " : election[" +
-                Ensemble.getSidWithServerStateStr(
-                        ImmutablePair.of(
-                                movedEnsemble.getFleToRun().getId(),
-                                movedEnsemble.getFleToRun().getState()))
-                + "] -> leader: "
-                + doneEnsemble.getLeaderLoopResult().values()
-                .iterator().next().getLeader());
-        doneEnsemble.verifyLeader();
-    }
-
     private void leaderCombValidate(ImmutableTriple<Ensemble, Ensemble,
-            Ensemble> t) {
+            Ensemble> t) throws ExecutionException, InterruptedException {
         final Ensemble configured = t.getLeft();
         final Ensemble moved = t.getMiddle();
         final Ensemble done = t.getRight();
-        LOG.info("verify " + configured + "->" + moved + " : election[" +
+        LOG.warn("verify " + configured + "->" + moved + " : election[" +
                 Ensemble.getSidWithServerStateStr(
                         ImmutablePair.of(
                                 moved.getFleToRun().getId(),
@@ -171,8 +164,9 @@ public class FastLeaderElectionV2UnitTest {
                 + "]");
 
         done.verifyLeader();
+        done.shutdown().get();
 
-        LOG.info("verified " + configured + "->" + moved + " : election[" +
+        LOG.warn("verified " + configured + "->" + moved + " : election[" +
                 Ensemble.getSidWithServerStateStr(
                         ImmutablePair.of(
                                 moved.getFleToRun().getId(),
@@ -188,5 +182,16 @@ public class FastLeaderElectionV2UnitTest {
             str += ", " + i + "K";
         }
         return str + "}";
+    }
+
+    public Ensemble createEnsemble(final Long id) throws ElectionException {
+        return EnsembleFactory.createEnsemble(
+                this.ensembleType, id, this.quorumSize, this.stableTimeout,
+                this.stableTimeoutUnit, this.quorumServerList,
+                this.readTimeoutMsec,
+                this.connectTimeoutMsec, this.keepAliveTimeoutMsec,
+                this.keepAliveCount, this.keyStore.get(0),
+                this.keyPassword.get(0), this.trustStore.get(0),
+                this.trustPassword.get(0), this.trustStoreCAAlias);
     }
 }

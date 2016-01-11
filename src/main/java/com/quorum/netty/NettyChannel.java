@@ -233,7 +233,7 @@ public abstract class NettyChannel<T> extends NettyChannelBase {
      */
     protected void connectTimeOut(ChannelHandlerContext ctx)
             throws ChannelException {
-        LOG.error("connect timeout, closing channel");
+        LOG.warn("connect timeout, closing channel");
         stopConnectTimer();
         errClose(ctx);
     }
@@ -255,7 +255,7 @@ public abstract class NettyChannel<T> extends NettyChannelBase {
      */
     protected void keepAliveTimeOut(ChannelHandlerContext ctx)
             throws ChannelException {
-        LOG.error("keepalive timeout, closing channel");
+        LOG.warn("keepalive timeout, closing channel");
         stopKeepAliveTimer();
         errClose(ctx);
     }

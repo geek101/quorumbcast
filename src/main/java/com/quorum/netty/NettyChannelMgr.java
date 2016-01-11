@@ -122,9 +122,9 @@ public abstract class NettyChannelMgr {
         acceptChannelFuture.sync();
     }
 
-    public void shutdown() {
+    public void shutdown() throws InterruptedException {
         if (acceptChannelFuture != null) {
-            acceptChannelFuture.channel().close().syncUninterruptibly();
+            acceptChannelFuture.channel().close();
         }
     }
 

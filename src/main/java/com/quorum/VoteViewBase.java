@@ -4,6 +4,7 @@ import com.quorum.util.ErrCallback;
 import com.quorum.util.NotNull;
 import com.quorum.util.Predicate;
 import com.quorum.util.ZKTimerTask;
+import io.netty.channel.EventLoopGroup;
 import io.netty.channel.nio.NioEventLoopGroup;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -29,7 +30,7 @@ public abstract class VoteViewBase extends VoteViewChange
      * Do not increase the max thread count. Current design assumes a single
      * thread executor.
      */
-    protected static final int MAX_THREAD_COUNT = 1;
+    public static final int MAX_THREAD_COUNT = 1;
     protected static final int MAX_CONSUMER_COUNT = 1;
     protected static final long TIMEOUT_MSEC = 10;
 
@@ -63,27 +64,32 @@ public abstract class VoteViewBase extends VoteViewChange
         }
     }
 
-    public VoteViewBase(final long mySid) {
+    protected VoteViewBase(final long mySid,
+                           final EventLoopGroup eventLoopGroup) {
         super(mySid);
+        this.group = eventLoopGroup;
+        this.self = this;
+    }
 
-        this.group = new NioEventLoopGroup(MAX_THREAD_COUNT,
+    public VoteViewBase(final long mySid) {
+        this(mySid, new NioEventLoopGroup(MAX_THREAD_COUNT,
                 Executors.newSingleThreadExecutor(new ThreadFactory() {
                     @Override
                     public Thread newThread(Runnable target) {
                         final Thread thread = new Thread(target);
-                        LOG.debug("Creating new worker thread");
+                        LOG.debug("Creatin new worker thread");
                         thread.setUncaughtExceptionHandler(
                                 new Thread.UncaughtExceptionHandler() {
                                     @Override
-                                    public void uncaughtException(Thread t, Throwable e) {
+                                    public void uncaughtException(Thread t,
+                                                                  Throwable e) {
                                         LOG.error("Uncaught Exception", e);
                                         System.exit(1);
                                     }
                                 });
                         return thread;
                     }
-                }));
-        this.self = this;
+                })));
     }
 
     public VoteViewBase(final long mySid, final ExecutorService group) {

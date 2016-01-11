@@ -72,7 +72,7 @@ public abstract class NettyChannelBase extends ByteToMessageDecoderImpl {
 
     @Override
     public void exceptionCaught(ChannelHandlerContext ctx, Throwable cause) {
-        LOG.error("exception cause: " + cause);
+        LOG.warn("exception cause: " + cause);
         if (cause instanceof IOException ||
                 cause instanceof ChannelException) {
             errClose(ctx);

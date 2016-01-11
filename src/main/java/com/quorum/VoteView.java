@@ -21,6 +21,7 @@ import com.common.X509Exception;
 import com.quorum.util.Callback;
 import com.quorum.util.ChannelException;
 import com.quorum.util.NotNull;
+import com.quorum.util.QuorumSocketFactory;
 import io.netty.channel.EventLoopGroup;
 import io.netty.channel.nio.NioEventLoopGroup;
 
@@ -42,6 +43,30 @@ public class VoteView extends VoteViewBase {
         public void call(final Vote o) throws ChannelException, IOException {
             self.msgRx(o);
         }
+    }
+
+    /**
+     * Used for testing.
+     * @param mySid
+     * @param electionAddr
+     * @param eventLoopGroup
+     * @param quorumBroadcast
+     */
+    protected VoteView(final Long mySid,
+                       final InetSocketAddress electionAddr,
+                       final EventLoopGroup eventLoopGroup,
+                       final QuorumBroadcast quorumBroadcast) {
+        super(mySid, eventLoopGroup);
+
+        this.electionAddr = electionAddr;
+        if (!(this.group instanceof NioEventLoopGroup)) {
+            throw new IllegalArgumentException("invalid event loop group");
+        }
+        this.eventLoopGroup = (NioEventLoopGroup)this.group;
+        if (!(quorumBroadcast instanceof  com.quorum.netty.QuorumBroadcast)){
+            throw new IllegalArgumentException("invalid quorum broacast");
+        }
+        this.quorumBroadcast = quorumBroadcast;
     }
 
     public VoteView(final String type,
@@ -81,12 +106,14 @@ public class VoteView extends VoteViewBase {
         }
     }
 
-    public void shutdown() throws InterruptedException {
+    public Future<?> shutdown() throws InterruptedException {
         synchronized (this) {
             if (!isShutdown) {
                 quorumBroadcast.shutdown();
-                this.eventLoopGroup.shutdownGracefully().sync();
                 isShutdown = true;
+                return this.eventLoopGroup.shutdownGracefully();
+            } else {
+                return CompletableFuture.completedFuture(null);
             }
         }
     }
