@@ -198,8 +198,13 @@ public abstract class AbstractEnsemble implements Ensemble {
      * @return
      */
     @Override
-    public void verifyLeader() {
+    public void verifyLeaderAfterShutDown()
+            throws InterruptedException, ExecutionException {
         final HashMap<Long, Vote> resultVotes = getLeaderLoopResult();
+
+        // Above will wait for leader elections to finish.
+        shutdown().get();
+
         final HashMap<Long, HashSet<Long>> leaderQuorumMap = new HashMap<>();
 
         for (final FLEV2Wrapper fle : fles.values()) {
@@ -220,6 +225,7 @@ public abstract class AbstractEnsemble implements Ensemble {
         int max = Integer.MIN_VALUE;
         long secondBestLeaderSid = Integer.MIN_VALUE;
         long bestLeaderSid = Integer.MIN_VALUE;
+
         for (final Map.Entry<Long, HashSet<Long>> entry
                 : leaderQuorumMap.entrySet()) {
             if (entry.getValue().size() > max) {
@@ -234,7 +240,7 @@ public abstract class AbstractEnsemble implements Ensemble {
                     + " has no quorum: "
                     + leaderQuorumMap.get(bestLeaderSid).size();
             LOG.error(errStr);
-            printAllVotes();
+
             assertTrue(errStr, false);
         }
 
@@ -243,14 +249,17 @@ public abstract class AbstractEnsemble implements Ensemble {
             verifySafetyPredicate(fles.get(sid).getSelfVote());
         }
 
+        /**
+         * This needs to be printed after shutting down?
+         */
         if (secondBestLeaderSid != Integer.MIN_VALUE) {
             final String errStr = "Got second best: " + secondBestLeaderSid
                     + " with minority quorum: " + leaderQuorumMap.get
                     (secondBestLeaderSid)
                     + " best leader: " + bestLeaderSid + " with " +
                     "majority quorum: " + leaderQuorumMap.get(bestLeaderSid);
-            printAllVotes();
             LOG.warn(errStr);
+            printAllVotes();
         }
     }
 

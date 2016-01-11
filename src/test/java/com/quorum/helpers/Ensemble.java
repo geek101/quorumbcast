@@ -34,7 +34,8 @@ public interface Ensemble {
     FLEV2Wrapper getFleThatRan();
     HashMap<Long, Vote> getLeaderLoopResult();
 
-    void verifyLeader();
+    void verifyLeaderAfterShutDown() throws InterruptedException,
+            ExecutionException;
     Future<?> shutdown();
     FLEV2Wrapper disconnect(final long serverSid) throws ElectionException;
     FLEV2Wrapper connect(final long serverSid) throws ElectionException;

@@ -106,8 +106,7 @@ public class FastLeaderElectionV2UnitTest extends BaseTest {
         final Collection<Ensemble> lookingSet = ensemble.moveToLookingForAll();
         for (final Ensemble e : lookingSet) {
             final Ensemble result = e.runLooking();
-            result.verifyLeader();
-            result.shutdown().get();
+            result.verifyLeaderAfterShutDown();
             e.shutdown().get();
         }
         ensemble.shutdown().get();
@@ -163,15 +162,14 @@ public class FastLeaderElectionV2UnitTest extends BaseTest {
                                 moved.getFleToRun().getState()))
                 + "]");
 
-        done.verifyLeader();
-        done.shutdown().get();
+        done.verifyLeaderAfterShutDown();
 
         LOG.warn("verified " + configured + "->" + moved + " : election[" +
                 Ensemble.getSidWithServerStateStr(
                         ImmutablePair.of(
                                 moved.getFleToRun().getId(),
                                 moved.getFleToRun().getState()))
-                + "] -> leader: "
+                + "] -> " + done + " , leader: "
                 + done.getLeaderLoopResult().values()
                 .iterator().next().getLeader());
     }

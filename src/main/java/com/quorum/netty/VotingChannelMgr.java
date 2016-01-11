@@ -176,6 +176,8 @@ public class VotingChannelMgr extends NettyChannelMgr {
      * API to start the listener and runner to manage connections to added
      * servers.Also takes care of removing the deleted servers and stopping
      * connections to them.
+     * TODO: can we get rid of the timer? make it trigger based?. It
+     * makes a copy of current Vote which I am not fond of.
      * @throws ChannelException
      * @throws SSLException
      * @throws CertificateException
@@ -281,8 +283,8 @@ public class VotingChannelMgr extends NettyChannelMgr {
      */
     public void sendVote(final Vote vote) {
         NotNull.check(vote, "Cannot accept null for Vote", LOG);
-        this.currentVote = vote.copy();
-        sendVoteAsync();
+        this.currentVote = vote;
+        sendVoteAsync(vote);
     }
 
     /**
@@ -493,12 +495,13 @@ public class VotingChannelMgr extends NettyChannelMgr {
         }
     }
 
-    private Future<Void> sendVoteAsync() {
+    private Future<Void> sendVoteAsync(final Vote voteToSend) {
         FutureTask<Void> futureTask = new FutureTask<>(
                 new Callable<Void>() {
+
                     @Override
                     public Void call() throws ChannelException {
-                        sendVoteToAll();
+                        sendVoteToAll(voteToSend);
                         return null;
                     }
                 });
@@ -506,18 +509,12 @@ public class VotingChannelMgr extends NettyChannelMgr {
         return futureTask;
     }
 
-    private void sendVoteToAll() {
-        // If there exists a message to send then send it.
-        final Vote vote = currentVote.copy();
-        if (vote == null) {
-            return;
-        }
-
+    private void sendVoteToAll(final Vote voteToSend) {
         for (ChannelHolder channelHolder : channelMap.values()) {
             if (!channelHolder.isRemoved() &&
                     channelHolder.getQuorumChannel() != null) {
                 sendVoteToServer(channelHolder.getQuorumChannel(),
-                        channelHolder.getServer(), vote);
+                        channelHolder.getServer(), voteToSend);
             }
         }
     }
@@ -594,7 +591,9 @@ public class VotingChannelMgr extends NettyChannelMgr {
         initServers();
 
         // Try sending current vote for re-connected and new channels
-        sendVoteToAll();
+        if (currentVote != null) {
+            sendVoteToAll(currentVote.copy());
+        }
     }
 
     protected void submitTask(FutureTask task) {

@@ -78,16 +78,40 @@ public class FastLeaderElectionV2OneOfTest extends BaseTest {
                 = parentEnsemble.moveToLooking(5);
         final Ensemble doneEnsemble
                 = movedEnsemble.runLooking();
-        LOG.info("verified " + parentEnsemble + "->" + movedEnsemble
+
+        doneEnsemble.verifyLeaderAfterShutDown();
+        LOG.warn("verified " + parentEnsemble + "->" + movedEnsemble
                 + " : election[" +
                 Ensemble.getSidWithServerStateStr(
                         ImmutablePair.of(
                                 movedEnsemble.getFleToRun().getId(),
                                 movedEnsemble.getFleToRun().getState()))
-                + "] -> leader: "
+                + "] -> " + doneEnsemble + ", leader: "
                 + doneEnsemble.getLeaderLoopResult().values()
                 .iterator().next().getLeader());
-        doneEnsemble.verifyLeader();
+    }
+
+    @Test
+    public void testLookingJoinExistingEnsemble()
+            throws ElectionException, InterruptedException, ExecutionException {
+        final Ensemble ensemble = createEnsemble(1L, 5);
+        final Ensemble parentEnsemble
+                = ensemble.configure("{1k, 2L, 3F, 4F, 5K}");
+        final Ensemble movedEnsemble
+                = parentEnsemble.moveToLooking(1);
+        final Ensemble doneEnsemble
+                = movedEnsemble.runLooking();
+
+        doneEnsemble.verifyLeaderAfterShutDown();
+        LOG.warn("verified " + parentEnsemble + "->" + movedEnsemble
+                + " : election[" +
+                Ensemble.getSidWithServerStateStr(
+                        ImmutablePair.of(
+                                movedEnsemble.getFleToRun().getId(),
+                                movedEnsemble.getFleToRun().getState()))
+                + "] -> " + doneEnsemble + ", leader: "
+                + doneEnsemble.getLeaderLoopResult().values()
+                .iterator().next().getLeader());
     }
 
     public Ensemble createEnsemble(final Long id, final int quorumSize) throws

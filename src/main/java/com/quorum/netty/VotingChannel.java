@@ -264,7 +264,7 @@ public abstract class VotingChannel extends NettyChannel<Long> {
         super.sendMsg(vote);
 
         // Store the last message sent.
-        voteSent = vote.copy();
+        voteSent = vote;
         return true;
     }
 
