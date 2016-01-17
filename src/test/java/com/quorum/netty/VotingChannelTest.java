@@ -471,7 +471,7 @@ public class VotingChannelTest extends BaseTest {
                         keepAliveCount, sidLearnedCb, msgRxCb);
 
         // Lets listen.
-        ChannelFuture listenFuture = null;
+        ChannelFuture listenFuture;
         try {
             listenFuture = startListener(listenServer.getElectionAddr(),
                     eventLoopGroup, votingServerChannel);

@@ -252,6 +252,9 @@ public class VotingChannelMgr extends NettyChannelMgr {
                         + " already exists.");
             }
 
+            if (server.id() == mySid) {
+                return;
+            }
             channelMap.put(server.id(), new ChannelHolder(server));
         }
     }

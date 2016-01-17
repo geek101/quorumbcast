@@ -33,7 +33,7 @@ import java.util.Random;
 public class Vote {
     private static final Logger LOG = LoggerFactory.getLogger(Vote.class);
     private static ByteBufAllocator writeBufAllocater =
-            PooledByteBufAllocator.DEFAULT;
+            new PooledByteBufAllocator(true);
 
     final private int version;
     final private long leader;
@@ -284,7 +284,7 @@ public class Vote {
      * Msg len - 40 + Msg size len - 4
      * @return
      */
-    private static int getMsgHdrLen() {
+    public static int getMsgHdrLen() {
         return Integer.BYTES +    /* state */
                 Long.BYTES    +   /* leader */
                 Long.BYTES    +   /* zxid */

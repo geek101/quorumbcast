@@ -3,9 +3,6 @@ package com.quorum.util;
 
 import org.slf4j.Logger;
 
-/**
- * Created by powell on 11/30/15.
- */
 public class LogPrefix {
     private final Logger log;
     private String prefix;
@@ -27,6 +24,10 @@ public class LogPrefix {
         log.error(this.prefix + ": " + message);
     }
 
+    public void error(String message, Throwable t) {
+        log.error(this.prefix + ": " + message, t);
+    }
+
     public void warn(String message) {
         log.warn(this.prefix + ": " + message);
     }
@@ -45,5 +46,9 @@ public class LogPrefix {
 
     public boolean isDebugEnabled() {
         return log.isDebugEnabled();
+    }
+
+    public String getPrefix() {
+        return prefix;
     }
 }

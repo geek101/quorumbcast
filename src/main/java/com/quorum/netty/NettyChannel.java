@@ -125,6 +125,11 @@ public abstract class NettyChannel<T> extends NettyChannelBase {
         resetTimer(keepAliveTask);
     }
 
+    protected void delayKeepAliveTimer() {
+        if (keepAliveTask != null)  {
+            keepAliveTask.setLastWrite();
+        }
+    }
     protected void stopConnectTimer() throws ChannelException {
         stopTimer(connectTimeoutTask);
     }
@@ -197,31 +202,26 @@ public abstract class NettyChannel<T> extends NettyChannelBase {
     public void decode(ChannelHandlerContext ctx, ByteBuf in, List<Object> out)
             throws Exception {
         LOG.debug("decoding");
-        if (stopProcessing) {
-            return;
-        } else {
+        if (!stopProcessing) {
             if (!readHdrDone) {
                 // Hdr reading is not done.
                 //LOG.debug("decode: readHdr");
                 readHdrDone = readHdr(ctx, in);
-                if (readHdrDone && !stopProcessing) {
+                if (readHdrDone) {
                     //LOG.debug("decode: readmsg0");
                     readMsg(ctx, in);
                 }
                 return;
             }
+            LOG.debug("decode: readmsg");
+            readMsg(ctx, in);
         }
-
-        LOG.debug("decode: readmsg");
-        readMsg(ctx, in);
     }
 
     @Override
     protected void sendMsg(Object msg) {
         // On send we ensure keepalive task knows about this write.
-        if (keepAliveTask != null) {
-            keepAliveTask.setLastWrite();
-        }
+        delayKeepAliveTimer();
         super.sendMsg(msg);
     }
 
@@ -278,6 +278,7 @@ public abstract class NettyChannel<T> extends NettyChannelBase {
         try {
             stopConnectTimer();
             stopReadTimer();
+            stopKeepAliveTimer();
         } catch (ChannelException exp) {
             LOG.info("error stopping timer tasks ignoring, exp: " + exp);
         }
@@ -316,12 +317,13 @@ public abstract class NettyChannel<T> extends NettyChannelBase {
 
         @Override
         public void start() {
-            this.keepAliveMissCount = 0;
             setLastWrite();
             super.start();
         }
 
         public void setLastWrite() {
+            LOG.info("resetting keepAliveMissCount");
+            keepAliveMissCount = 0;
             lastWriteTimeNanos = System.nanoTime();
         }
 
@@ -332,16 +334,21 @@ public abstract class NettyChannel<T> extends NettyChannelBase {
          */
         @Override
         protected void call() throws ChannelException, IOException {
+            setLastUse();
             if (++keepAliveMissCount > keepAliveCount) {
+                final long nextDelay = keepAliveTimeoutNanos -
+                        (System.nanoTime() - lastWriteTimeNanos);
+                LOG.error("keepalive timeout with count: " +
+                        keepAliveMissCount + ", delay: "
+                        + TimeUnit.NANOSECONDS.toMillis(nextDelay));
                 super.call();
             } else {
-                setLastUse();
                 // if last write is well before this timeout then call send
                 if (System.nanoTime() > lastWriteTimeNanos) {
                     final long nextDelay = keepAliveTimeoutNanos -
                             (System.nanoTime() - lastWriteTimeNanos);
                     if (nextDelay <= 0) {
-                        LOG.info("Keepalive write timeout");
+                        LOG.debug("Keepalive write timeout");
                         keepAliveSend(ctx);
                     }
                 }
@@ -421,7 +428,8 @@ public abstract class NettyChannel<T> extends NettyChannelBase {
                 } catch (ChannelException | IOException exp) {
                     ctx.fireExceptionCaught(exp);
                 } catch (Throwable t) {
-                    LOG.error("Unhandled error, shutting down: " + t);
+                    t.printStackTrace();
+                    LOG.error("Unhandled error, shutting down:", t);
                     System.exit(-1);
                 }
             } else {

@@ -13,11 +13,11 @@ import javax.net.ssl.SSLException;
 import java.io.IOException;
 
 public abstract class NettyChannelBase extends ByteToMessageDecoderImpl {
-    private static final Logger LOGS
+    protected static final Logger LOGS
             = LoggerFactory.getLogger(NettyChannel.class.getName());
     private Channel channel = null;
     protected String prefixStr = null;
-    protected LogPrefix LOG = null;
+    protected LogPrefix LOG = new LogPrefix(LOGS, "");
 
     public void setChannel(Channel channel) throws ChannelException {
         if (this.channel != null) {
@@ -39,10 +39,6 @@ public abstract class NettyChannelBase extends ByteToMessageDecoderImpl {
 
     @Override
     public void channelActive(ChannelHandlerContext ctx) {
-        if (LOG == null) {
-            LOG = new LogPrefix(LOGS, "");
-        }
-
         prefixStr = getPrefix(ctx.channel());
         LOG.appendPrefix(prefixStr);
 
@@ -82,7 +78,8 @@ public abstract class NettyChannelBase extends ByteToMessageDecoderImpl {
                 if (th instanceof SSLException) {
                     errClose(ctx);
                 } else {
-                    LOG.error("Unhandled error, shutting down: " + th);
+                    th.printStackTrace();
+                    LOG.error("Unhandled error, shutting down: ", th);
                     System.exit(-1);
                 }
             } else {
@@ -90,7 +87,8 @@ public abstract class NettyChannelBase extends ByteToMessageDecoderImpl {
                 System.exit(-1);
             }
         } else {
-            LOG.error("Unhandled error, shutting down: " + cause);
+            cause.printStackTrace();
+            LOG.error("Unhandled error, shutting down: ", cause);
             System.exit(-1);
         }
     }

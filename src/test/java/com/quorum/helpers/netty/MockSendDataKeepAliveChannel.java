@@ -1,7 +1,5 @@
 package com.quorum.helpers.netty;
 
-
-import com.quorum.Vote;
 import com.quorum.util.ChannelException;
 import io.netty.buffer.ByteBuf;
 import io.netty.channel.ChannelHandlerContext;
@@ -12,9 +10,7 @@ import java.nio.ByteBuffer;
 
 import static org.junit.Assert.assertTrue;
 
-/**
- * Created by powell on 12/27/15.
- */
+
 public class MockSendDataKeepAliveChannel extends MockSendDataChannel {
     private ByteBuffer msgSent;
     private ByteBuffer msgRcv;

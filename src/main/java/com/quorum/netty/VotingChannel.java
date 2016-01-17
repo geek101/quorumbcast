@@ -45,9 +45,9 @@ public abstract class VotingChannel extends NettyChannel<Long> {
     protected final InetSocketAddress myElectionAddr;
     private QuorumServer server ;
     private final Callback<Vote> msgRxCb;
-    private ByteBuf voteBuf; // used by message read state machine
-    private static ByteBufAllocator readBufAllocator
-            = PooledByteBufAllocator.DEFAULT;
+    private ByteBuf voteBuf = Unpooled.buffer(Vote.getMsgHdrLen()
+            + Integer.BYTES); // used by message
+    // read state machine
     protected enum ReaderState {
         UNKNOWN, HDR, MSGLEN, MSG,
     }
@@ -149,15 +149,14 @@ public abstract class VotingChannel extends NettyChannel<Long> {
     @Override
     protected void keepAliveSend(final ChannelHandlerContext ctx)
             throws ChannelException, IOException {
-        NotNull.check(this.voteSent, "keepalive needs voteSent set.", LOG);
-        ctx.writeAndFlush(this.voteSent.buildMsg());
+        NotNull.check(voteSent, "keepalive needs voteSent set.", LOG);
+        ctx.writeAndFlush(voteSent.buildMsg());
     }
 
     @Override
     protected void readMsg(final ChannelHandlerContext ctx, final ByteBuf inBuf)
             throws ChannelException {
         if (readerState == ReaderState.MSGLEN) {
-            LOG.debug("msglen");
             if (inBuf.readableBytes() < Integer.BYTES) {
                 return;
             }
@@ -166,7 +165,7 @@ public abstract class VotingChannel extends NettyChannel<Long> {
             resetReadTimer(ctx);
 
             // Read timer is set so stop keep alive timer.
-            stopKeepAliveTimer();
+            delayKeepAliveTimer();
 
             final int remainder = inBuf.readInt();
             if (remainder == 0) {
@@ -174,15 +173,17 @@ public abstract class VotingChannel extends NettyChannel<Long> {
                 LOG.error(errStr);
                 throw new ChannelException(errStr);
             }
-            voteBuf = readBufAllocator.buffer(remainder + Integer.BYTES);
+
             voteBuf.writeInt(remainder);
+
             readerState = ReaderState.MSG;
         } else if (readerState == ReaderState.MSG) {
-            LOG.debug("msg");
-            inBuf.readBytes(voteBuf);
-            if (voteBuf.writableBytes() > 0) {
+            if (inBuf.readableBytes() < voteBuf.writableBytes()) {
                 return; // not done yet.
             }
+
+            // we have the full vote, write to it.
+            inBuf.readBytes(voteBuf);
 
             // Store the message in the in-bound map.
             try {
@@ -200,9 +201,9 @@ public abstract class VotingChannel extends NettyChannel<Long> {
                 stopReadTimer(ctx);
 
                 // Read timer is done so start the keep alive timer.
-                resetKeepAliveTimer();
-                voteBuf.release();
-                voteBuf = null;
+                delayKeepAliveTimer();
+
+                voteBuf.clear();
                 readerState = ReaderState.MSGLEN;
             }
         } else {
