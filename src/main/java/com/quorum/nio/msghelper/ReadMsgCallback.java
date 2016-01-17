@@ -25,9 +25,9 @@ import java.io.IOException;
  * Interface for all parse related state machines.
  * Created by powell on 11/10/15.
  */
-public interface ReadMsgCallback {
+public interface ReadMsgCallback<T> {
     void readMsg(Object ctx, MsgChannel ch)
             throws ChannelException, IOException;
     boolean shouldRetry();
-    Object getResult();
+    T getResult();
 }

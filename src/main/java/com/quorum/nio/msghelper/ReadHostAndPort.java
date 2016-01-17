@@ -26,9 +26,9 @@ import java.nio.ByteBuffer;
 
 /**
  * Read the remainder from the server and parse it.
- * Created by powell on 11/11/15.
  */
-public class ReadHostAndPort extends ReadLen {
+public class ReadHostAndPort extends ReadLen<InitMessageCtx> {
+    InitMessageCtx resultMsgCtx = null;
     public ReadHostAndPort() {
         super();
     }
@@ -43,7 +43,7 @@ public class ReadHostAndPort extends ReadLen {
             throws ChannelException, IOException {
         InitMessageCtx initMsgCtx = (InitMessageCtx) ctx;
 
-        ByteBuffer buf = (ByteBuffer)getResult();
+        ByteBuffer buf = getBuf();
         byte[] b = new byte[initMsgCtx.remainder];
         buf.get(b);
 
@@ -67,6 +67,10 @@ public class ReadHostAndPort extends ReadLen {
 
         initMsgCtx.addr = new InetSocketAddress(
                 InetAddress.getByName(host_port[0]), port);
-        resetResult(initMsgCtx);
+        resultMsgCtx = initMsgCtx;
+    }
+
+    public InitMessageCtx getResult() {
+        return resultMsgCtx;
     }
 }

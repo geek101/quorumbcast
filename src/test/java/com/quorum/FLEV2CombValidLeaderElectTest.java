@@ -42,32 +42,34 @@ import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertTrue;
 
 @RunWith(Parameterized.class)
-public class FastLeaderElectionV2UnitTest extends BaseTest {
+public class FLEV2CombValidLeaderElectTest extends BaseTest {
     private static final Logger LOG
-            = LoggerFactory.getLogger(FastLeaderElectionV2UnitTest.class);
+            = LoggerFactory.getLogger(FLEV2CombValidLeaderElectTest.class);
     private String ensembleType;
     private final int quorumSize;
     private final int stableTimeout;
     private final TimeUnit stableTimeoutUnit;
     private final List<QuorumServer> quorumServerList = new ArrayList<>();
-    private final Long readTimeoutMsec = 100L;
+    private final Long readTimeoutMsec = 300L;
     private final Long connectTimeoutMsec = 500L;
-    private final Long keepAliveTimeoutMsec = 50L;
+    private final Long keepAliveTimeoutMsec = 150L;
     private final Integer keepAliveCount = 3;
 
     @Parameterized.Parameters
     public static Collection quorumTypeAndSize() {
         return Arrays.asList( new Object [][] {
+                // type, quorum-size, stable-timeout, stable-timeout unit
                 { "mock", 3, 1, TimeUnit.MILLISECONDS },
                 { "mock", 5, 1, TimeUnit.MILLISECONDS },
                 { "mock", 7, 1, TimeUnit.MILLISECONDS },
                 { "mockbcast", 3, 50, TimeUnit.MILLISECONDS},
                 { "mockbcast", 5, 50, TimeUnit.MILLISECONDS},
-                { "quorumbcast", 3, 150, TimeUnit.MILLISECONDS},
+                { "quorumbcast", 3, 350, TimeUnit.MILLISECONDS},
+                { "quorumbcast-ssl", 3, 350, TimeUnit.MILLISECONDS}
         });
     }
 
-    public FastLeaderElectionV2UnitTest(final String ensembleType,
+    public FLEV2CombValidLeaderElectTest(final String ensembleType,
                                         final int quorumSize,
                                         final int stableTimeout,
                                         final TimeUnit stableTimeUnit) {
@@ -183,13 +185,16 @@ public class FastLeaderElectionV2UnitTest extends BaseTest {
     }
 
     public Ensemble createEnsemble(final Long id) throws ElectionException {
+        ClassLoader cl = getClass().getClassLoader();
         return EnsembleFactory.createEnsemble(
                 this.ensembleType, id, this.quorumSize, this.stableTimeout,
                 this.stableTimeoutUnit, this.quorumServerList,
                 this.readTimeoutMsec,
                 this.connectTimeoutMsec, this.keepAliveTimeoutMsec,
-                this.keepAliveCount, this.keyStore.get(0),
-                this.keyPassword.get(0), this.trustStore.get(0),
+                this.keepAliveCount,
+                cl.getResource(this.keyStore.get(0)).getFile(),
+                this.keyPassword.get(0),
+                cl.getResource(this.trustStore.get(0)).getFile(),
                 this.trustPassword.get(0), this.trustStoreCAAlias);
     }
 }

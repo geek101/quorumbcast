@@ -16,6 +16,8 @@
 
 package com.quorum.nio;
 
+import com.quorum.nio.msghelper.ReadMsgCallback;
+import com.quorum.util.Callback;
 import com.quorum.util.ChannelException;
 
 import java.io.IOException;
@@ -25,7 +27,8 @@ import java.io.IOException;
  * Created by powell on 11/10/15.
  */
 public interface IPipeline<T> {
-    IPipeline add(Object o);       /// Add a generic callback object
+    IPipeline add(ReadMsgCallback<? extends Object> o);       /// Add a generic
+    // callback object
     void runNext(T o) throws ChannelException, IOException;   /// Run the next
     // handler in the
                                                 // chain

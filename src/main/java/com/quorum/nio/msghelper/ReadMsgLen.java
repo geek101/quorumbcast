@@ -20,10 +20,7 @@ import com.quorum.util.ChannelException;
 
 import java.io.IOException;
 
-/**
- * Created by powell on 11/12/15.
- */
-public class ReadMsgLen extends ReadNumber<Integer> {
+public class ReadMsgLen extends ReadNumber<Integer, Integer> {
     public static final int PACKETMAXSIZE = 1024 * 512;
     private static Integer t = Integer.MAX_VALUE;
     public ReadMsgLen() throws ChannelException, IOException {
@@ -33,11 +30,16 @@ public class ReadMsgLen extends ReadNumber<Integer> {
     public void ctxPreRead(Object ctx) {}
 
     public void ctxPostRead(Object ctx) throws ChannelException, IOException {
-        Integer length = (Integer)getResult();
+        Integer length = getBuf();
         if (length <= 0 || length > PACKETMAXSIZE) {
             throw new IOException(
                     "Received packet with invalid packet: "
                             + length);
         }
+    }
+
+    @Override
+    public Integer getResult() {
+        return getBuf();
     }
 }

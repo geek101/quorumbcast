@@ -20,9 +20,6 @@ import com.quorum.util.ChannelException;
 
 import java.io.IOException;
 
-/**
- * Created by powell on 11/9/15.
- */
 public interface MsgChannelCallable {
     void execute(MsgChannel o) throws ChannelException, IOException;
     void done(MsgChannel o) throws ChannelException, IOException;

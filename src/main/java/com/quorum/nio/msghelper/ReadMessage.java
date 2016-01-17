@@ -21,10 +21,8 @@ import com.quorum.util.ChannelException;
 import java.io.IOException;
 import java.nio.ByteBuffer;
 
-/**
- * Created by powell on 11/12/15.
- */
-public class ReadMessage extends ReadLen {
+public class ReadMessage extends ReadLen<MessageCtx> {
+    private MessageCtx resultMsgCtx = null;
     public ReadMessage() {
         super();
     }
@@ -34,7 +32,12 @@ public class ReadMessage extends ReadLen {
     public void ctxPostRead(Object ctx)
             throws ChannelException, IOException {
         MessageCtx messageCtx = new MessageCtx();
-        messageCtx.buf = (ByteBuffer)getResult();
-        resetResult(messageCtx);
+        messageCtx.buf = getBuf();
+        resultMsgCtx = messageCtx;
+    }
+
+    @Override
+    public MessageCtx getResult() {
+        return resultMsgCtx;
     }
 }

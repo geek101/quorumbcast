@@ -23,12 +23,12 @@ import java.io.IOException;
 
 /**
  * Read 4byte message size to be read next.
- * Created by powell on 11/11/15.
  */
 
-public class ReadRemainer extends ReadNumber<Integer> {
-    static public final int maxBuffer = 2048;
+public class ReadRemainer extends ReadNumber<Integer, InitMessageCtx> {
+    public static final int maxBuffer = 2048;
     private static Integer t = Integer.MAX_VALUE;
+    InitMessageCtx resultMsgCtx = null;
     public ReadRemainer() throws ChannelException, IOException {
         super(t);
     }
@@ -39,13 +39,18 @@ public class ReadRemainer extends ReadNumber<Integer> {
             throws ChannelException, IOException {
         InitMessageCtx initMsgCtx = (InitMessageCtx) ctx;
 
-        Integer remaining = (Integer)getResult();
+        Integer remaining = getBuf();
         if (remaining <= 0 || remaining > maxBuffer) {
             throw new ChannelException(
                     "Unreasonable buffer length: %s", remaining);
         }
 
         initMsgCtx.remainder = remaining;
-        resetResult(initMsgCtx);
+        resultMsgCtx = initMsgCtx;
+    }
+
+    @Override
+    public InitMessageCtx getResult() {
+        return resultMsgCtx;
     }
 }

@@ -20,15 +20,20 @@ package com.quorum;
 
 import com.quorum.util.NotNull;
 import io.netty.buffer.ByteBuf;
+import io.netty.buffer.ByteBufAllocator;
+import io.netty.buffer.PooledByteBufAllocator;
 import io.netty.buffer.Unpooled;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import java.nio.ByteBuffer;
 import java.util.Random;
 
 
 public class Vote {
     private static final Logger LOG = LoggerFactory.getLogger(Vote.class);
+    private static ByteBufAllocator writeBufAllocater =
+            PooledByteBufAllocator.DEFAULT;
 
     final private int version;
     final private long leader;
@@ -240,31 +245,54 @@ public class Vote {
      * @return ByteBuf including the msglen at the beginning.
      */
     public static ByteBuf buildMsg(int state, long leader, long zxid,
-                                   long electionEpoch, long epoch, long sid,
+                                   long electionEpoch, long epoch,
                                    int version) {
-        ByteBuf requestBuffer = Unpooled.buffer(40 + Integer.BYTES);
+        ByteBuf requestBuffer = writeBufAllocater.directBuffer(
+                getMsgHdrLen() + Integer.BYTES);
 
         /*
          * Building notification packet to send.
          * Write size first then the data.
          */
-        requestBuffer.writeInt(Integer.BYTES /* state */ +
-                Long.BYTES    /* leader */ +
-                Long.BYTES    /* zxid */ +
-                Long.BYTES    /* electionEpoch */ +
-                Long.BYTES    /* epoch */ +
-                Long.BYTES    /* sid */ +
-                Integer.BYTES /* CURRENTVERSION */);
+        requestBuffer.writeInt(getMsgHdrLen());
         requestBuffer.writeInt(state);
         requestBuffer.writeLong(leader);
         requestBuffer.writeLong(zxid);
         requestBuffer.writeLong(electionEpoch);
         requestBuffer.writeLong(epoch);
-        requestBuffer.writeLong(sid);
         requestBuffer.writeInt(version);
         return requestBuffer;
     }
 
+    public static ByteBuffer buildMsgForNio(int state, long leader, long zxid,
+                                            long electionEpoch, long epoch,
+                                            int version) {
+        ByteBuffer byteBuffer = ByteBuffer.allocate(getMsgHdrLen()
+                + Integer.BYTES);
+        byteBuffer.putInt(getMsgHdrLen());
+        byteBuffer.putInt(state);
+        byteBuffer.putLong(leader);
+        byteBuffer.putLong(zxid);
+        byteBuffer.putLong(electionEpoch);
+        byteBuffer.putLong(epoch);
+        byteBuffer.putInt(version);
+        byteBuffer.flip();
+        return byteBuffer;
+    }
+
+    /**
+     * Msg len - 40 + Msg size len - 4
+     * @return
+     */
+    private static int getMsgHdrLen() {
+        return Integer.BYTES +    /* state */
+                Long.BYTES    +   /* leader */
+                Long.BYTES    +   /* zxid */
+                Long.BYTES    +   /* electionEpoch */
+                Long.BYTES    +   /* epoch */
+                Integer.BYTES;    /* CURRENTVERSION */
+
+    }
     /**
      * Vote to message on wire.
      *
@@ -273,7 +301,16 @@ public class Vote {
     public ByteBuf buildMsg() {
         return Vote.buildMsg(
                 this.state.ordinal(), this.leader, this.zxid,
-                this.electionEpoch, this.peerEpoch, this.sid, this.version);
+                this.electionEpoch, this.peerEpoch, this.version);
+    }
+
+    /**
+     * Helper for NIO to avoid ByteBuf includes and extra conversion.
+     * @return
+     */
+    public ByteBuffer buildMsgForNio() {
+        return Vote.buildMsgForNio(this.state.ordinal(), this.leader, this.zxid,
+                this.electionEpoch, this.peerEpoch, this.version);
     }
 
     /**
@@ -283,43 +320,80 @@ public class Vote {
      * @param b ByteBuf msg
      * @return Vote received
      */
-    public static Vote buildVote(ByteBuf b) {
+    public static Vote buildVote(final ByteBuf b, final long sid) {
         int remainder = b.readInt();
-        if (b.readableBytes() < remainder) {
-            LOG.error("Invalid vote received!. Size: {}, expected: {}",
-                    b.readableBytes(), remainder);
+        if (!isRemainderValid(b.readableBytes(), remainder)) {
             return null;
         }
 
         // State of peer that sent this message
-        QuorumPeer.ServerState ackstate = QuorumPeer.ServerState.LOOKING;
-        switch (b.readInt()) {
-            case 0:
-                ackstate = QuorumPeer.ServerState.LOOKING;
-                break;
-            case 1:
-                ackstate = QuorumPeer.ServerState.FOLLOWING;
-                break;
-            case 2:
-                ackstate = QuorumPeer.ServerState.LEADING;
-                break;
-            case 3:
-                ackstate = QuorumPeer.ServerState.OBSERVING;
-                break;
-            default:
-                LOG.error("Invalid vote received!. Size: {}, expected: {}",
-                        b.readableBytes(), remainder);
-                return null;
+        QuorumPeer.ServerState ackState = Vote.getStateFromValue(b.readInt());
+        if (ackState == null) {
+            return null;
         }
 
-        long id = b.readLong();            // Leader
+        long id = b.readLong();              // Leader
         long zxid = b.readLong();
         long electionEpoch = b.readLong();
         long peerEpoch = b.readLong();
-        long sid = b.readLong();
         int version = b.readInt();
         return new Vote(version, id, zxid, electionEpoch, peerEpoch, sid,
-                ackstate);
+                ackState);
+    }
+
+    public static Vote buildVote(final int len, final ByteBuffer b,
+                                 final long sid) {
+        if (!isRemainderValid(b.remaining(), len)) {
+            return null;
+        }
+
+        // State of peer that sent this message
+        QuorumPeer.ServerState ackState = Vote.getStateFromValue(b.getInt());
+        if (ackState == null) {
+            return null;
+        }
+
+        long id = b.getLong();              // Leader
+        long zxid = b.getLong();
+        long electionEpoch = b.getLong();
+        long peerEpoch = b.getLong();
+        int version = b.getInt();
+        return new Vote(version, id, zxid, electionEpoch, peerEpoch, sid,
+                ackState);
+    }
+
+    private static QuorumPeer.ServerState getStateFromValue(final int value) {
+        // State of peer that sent this message
+        switch (value) {
+            case 0:
+                return QuorumPeer.ServerState.LOOKING;
+            case 1:
+                return QuorumPeer.ServerState.FOLLOWING;
+            case 2:
+                return QuorumPeer.ServerState.LEADING;
+            case 3:
+                return QuorumPeer.ServerState.OBSERVING;
+            default:
+                LOG.error("Invalid vote received!. Unknown server state {}",
+                        value);
+                return null;
+        }
+    }
+
+    private static boolean isRemainderValid(int expected, int remainder) {
+        if (expected < remainder) {
+            LOG.error("Invalid vote len received!. Size: {}, expected: {}",
+                    expected, remainder);
+            return false;
+        }
+
+        if (remainder < getMsgHdrLen()) {
+            LOG.error("Unsupported vote len received!. Size: {}, expected:"
+                    + " {}", remainder, getMsgHdrLen());
+            return  false;
+        }
+
+        return true;
     }
 
     public static Vote createRemoveVote(final long sid) {

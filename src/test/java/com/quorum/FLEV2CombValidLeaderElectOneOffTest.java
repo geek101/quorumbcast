@@ -38,9 +38,10 @@ import java.util.concurrent.ExecutionException;
 import java.util.concurrent.TimeUnit;
 
 @RunWith(Parameterized.class)
-public class FastLeaderElectionV2OneOfTest extends BaseTest {
+public class FLEV2CombValidLeaderElectOneOffTest extends BaseTest {
     private static final Logger LOG
-            = LoggerFactory.getLogger(FastLeaderElectionV2OneOfTest.class);
+            = LoggerFactory.getLogger(
+            FLEV2CombValidLeaderElectOneOffTest.class);
 
     private String ensembleType;
     private final int stableTimeout;
@@ -60,7 +61,7 @@ public class FastLeaderElectionV2OneOfTest extends BaseTest {
         });
     }
 
-    public FastLeaderElectionV2OneOfTest(final String ensembleType,
+    public FLEV2CombValidLeaderElectOneOffTest(final String ensembleType,
                                          final int stableTimeout,
                                          final TimeUnit stableTimeUnit) {
         this.ensembleType = ensembleType;

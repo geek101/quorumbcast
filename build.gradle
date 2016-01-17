@@ -119,3 +119,8 @@ test {
         events 'started', 'passed'
     }
 }
+
+
+compileJava {
+    options.compilerArgs << "-Xlint:unchecked" << "-Xlint:deprecation"
+}

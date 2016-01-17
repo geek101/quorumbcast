@@ -187,8 +187,7 @@ public class QuorumChannelTest {
         });
 
         ByteBuffer readBuf = mockChannel.readMsgBlocking(2);
-        Vote voteRx = Vote.buildVote(Unpooled.buffer(readBuf.remaining())
-                .writeBytes(readBuf));
+        Vote voteRx = Vote.buildVote(readBuf.remaining(), readBuf, v.getSid());
         assertTrue("vote match", voteRx.match(voteRx));
 
         votingChannel.close();

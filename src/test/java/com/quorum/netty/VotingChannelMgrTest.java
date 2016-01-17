@@ -44,7 +44,6 @@ import java.util.Arrays;
 import java.util.Collection;
 import java.util.Random;
 import java.util.concurrent.ConcurrentLinkedQueue;
-import java.util.concurrent.Executors;
 
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertTrue;
@@ -338,7 +337,7 @@ public class VotingChannelMgrTest extends BaseTest {
         ByteBuf voteBufExpected = vote.buildMsg();
         ByteBuf voteBufRead = readHelper(socket,
                 voteBufExpected.readableBytes());
-        Vote voteRx = Vote.buildVote(voteBufRead);
+        Vote voteRx = Vote.buildVote(voteBufRead, vote.getSid());
         assertTrue("vote match", vote.match(voteRx));
     }
 

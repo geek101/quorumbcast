@@ -87,6 +87,7 @@ public interface Ensemble {
         return result;
     }
 
+    @SuppressWarnings("unchecked")
     static void getQuorumMajorityServerStateCombinations(
             final int quorumSize,
             final Long[] quorum,

@@ -23,9 +23,8 @@ import java.io.IOException;
 /**
  * Read the first 8 bytes. Should be ProtocolVersion
  * else if >= 0 must be sid.
- * Created by powell on 11/10/15.
  */
-public class ReadVer extends ReadNumber<Long> {
+public class ReadVer extends ReadNumber<Long, Long> {
     private static Long t = Long.MAX_VALUE;
 
     public ReadVer() throws ChannelException, IOException {
@@ -36,4 +35,9 @@ public class ReadVer extends ReadNumber<Long> {
 
     public void ctxPostRead(Object ctx)
             throws ChannelException, IOException {}
+
+    @Override
+    public Long getResult() {
+        return getBuf();
+    }
 }

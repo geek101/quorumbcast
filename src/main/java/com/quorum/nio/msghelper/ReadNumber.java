@@ -24,9 +24,9 @@ import java.nio.ByteBuffer;
 
 /**
  * Helps with reading when data is size of a Number, aka Short/Integer/Long etc
- * Created by powell on 11/11/15.
  */
-public abstract class ReadNumber<T extends Number> implements ReadMsgCallback {
+public abstract class ReadNumber<T extends Number, R extends Object> implements
+        ReadMsgCallback<R> {
     private final int size;
     private final T obj;           /// Must be a better way!
 
@@ -35,7 +35,7 @@ public abstract class ReadNumber<T extends Number> implements ReadMsgCallback {
     private boolean lastRead = false;
     private int readSize = 0;
     private boolean retry = true;
-    private Object result = null;
+    private T result = null;
 
     public ReadNumber(T obj)
             throws ChannelException, IOException {
@@ -87,7 +87,7 @@ public abstract class ReadNumber<T extends Number> implements ReadMsgCallback {
         return retry;
     }
 
-    public Object getResult() {
+    public T getBuf() {
         return result;
     }
 
@@ -95,22 +95,21 @@ public abstract class ReadNumber<T extends Number> implements ReadMsgCallback {
     public abstract void ctxPostRead(Object ctx)
             throws ChannelException, IOException;
 
-    protected void resetResult(Object o) {
+    protected void resetResult(T o) {
         result = o;
     }
 
-    private void setResult() {
+    @SuppressWarnings("unchecked")
+    private void setResult() throws ChannelException {
         buf.flip();
         if (obj instanceof Integer) {
-            result = new Integer(buf.getInt());
+            result = (T)new Integer(buf.getInt());
         } else if (obj instanceof Long) {
-            result = new Long(buf.getLong());
+            result = (T)new Long(buf.getLong());
         } else if (obj instanceof Short) {
-            result = new Short(buf.getShort());
+            result = (T)new Short(buf.getShort());
         } else {
-            result = buf;
-            retry = false;
-            return;
+            throw new ChannelException("Invalid type ");
         }
 
         buf = null;

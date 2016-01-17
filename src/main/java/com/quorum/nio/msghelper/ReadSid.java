@@ -23,17 +23,26 @@ import java.io.IOException;
 
 /**
  * Read 8byte sid.
- * Created by powell on 11/11/15.
  */
-public class ReadSid extends ReadVer {
+public class ReadSid extends ReadNumber<Long, InitMessageCtx> {
+    private static Long t = Long.MAX_VALUE;
+    private InitMessageCtx resultMsgCtx = null;
     public ReadSid() throws ChannelException, IOException {
-        super();
+        super(t);
     }
+
+    @Override
+    public void ctxPreRead(Object ctx) {}
 
     @Override
     public void ctxPostRead(Object ctx) throws ChannelException, IOException {
         InitMessageCtx initMsgCtx = (InitMessageCtx) ctx;
-        initMsgCtx.sid = (Long)getResult();
-        resetResult(initMsgCtx);
+        initMsgCtx.sid =  getBuf();
+        resultMsgCtx = initMsgCtx;
+    }
+
+    @Override
+    public InitMessageCtx getResult() {
+        return resultMsgCtx;
     }
 }

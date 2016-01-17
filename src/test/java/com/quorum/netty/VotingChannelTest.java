@@ -339,7 +339,7 @@ public class VotingChannelTest extends BaseTest {
             ByteBuf voteReadBuf = readHelper(socket,
                     vote.buildMsg().readableBytes());
 
-            final Vote vRx = Vote.buildVote(voteReadBuf);
+            final Vote vRx = Vote.buildVote(voteReadBuf, vote.getSid());
             assertTrue("vote received - " + count, vRx.match(vote));
             LOG.info("verified vote count[max-" + count + ": " + i);
         }
@@ -370,7 +370,7 @@ public class VotingChannelTest extends BaseTest {
         ByteBuf voteBuf = v.buildMsg();
         ByteBuf voteReadBuf = readHelper(socket, voteBuf.readableBytes());
 
-        Vote vRx = Vote.buildVote(voteReadBuf);
+        Vote vRx = Vote.buildVote(voteReadBuf, v.getSid());
         assertTrue("vote received", vRx.match(v));
 
         return ImmutableTriple.of(votingClientChannel, socket, v);
@@ -473,8 +473,8 @@ public class VotingChannelTest extends BaseTest {
         // Lets listen.
         ChannelFuture listenFuture = null;
         try {
-            listenFuture = startListener(listenServer.getElectionAddr(), eventLoopGroup,
-                    votingServerChannel);
+            listenFuture = startListener(listenServer.getElectionAddr(),
+                    eventLoopGroup, votingServerChannel);
             listenFuture.sync();
         } catch(ChannelException exp) {
             LOG.error("unable to listen, exp:" + exp);

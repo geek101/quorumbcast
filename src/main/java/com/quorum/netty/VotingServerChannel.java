@@ -44,7 +44,7 @@ public class VotingServerChannel extends VotingChannel {
     public VotingServerChannel(long mysid, InetSocketAddress myElectionAddr,
                                long readMsgTimeoutMsec,
                                Callback2 sidLearnedCb,
-                               Callback msgRxCb) {
+                               Callback<Vote> msgRxCb) {
         this(mysid, myElectionAddr, readMsgTimeoutMsec, 0L, 0,
                 sidLearnedCb, msgRxCb);
     }

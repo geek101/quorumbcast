@@ -24,9 +24,8 @@ import java.nio.ByteBuffer;
 
 /**
  * Helper to read variable data at runtime.
- * Created by powell on 11/11/15.
  */
-public abstract class ReadLen implements ReadMsgCallback {
+public abstract class ReadLen<T> implements ReadMsgCallback<T> {
     protected Integer size = null;
 
     protected ByteBuffer buf = null;
@@ -34,7 +33,6 @@ public abstract class ReadLen implements ReadMsgCallback {
     private boolean lastRead = false;
     private int readSize = 0;
     private boolean retry = true;
-    private Object result = null;
 
     public ReadLen() {}
 
@@ -68,7 +66,6 @@ public abstract class ReadLen implements ReadMsgCallback {
         if (readSize == size) {
             retry = false;
             buf.flip();
-            result = buf;
             if (!lastRead) {
                 lastRead = true;
                 ctxPostRead(ctx);
@@ -80,8 +77,8 @@ public abstract class ReadLen implements ReadMsgCallback {
         return retry;
     }
 
-    public Object getResult() {
-        return result;
+    public ByteBuffer getBuf() {
+        return buf;
     }
 
     public abstract void ctxPreRead(Object ctx);
@@ -90,9 +87,5 @@ public abstract class ReadLen implements ReadMsgCallback {
 
     protected void setSize(Integer size) {
         this.size = size;
-    }
-
-    protected void resetResult(Object o) {
-        result = o;
     }
 }

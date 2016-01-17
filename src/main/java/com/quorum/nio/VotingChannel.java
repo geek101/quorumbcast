@@ -23,8 +23,6 @@ import com.quorum.util.Callback;
 import com.quorum.util.ChannelException;
 import com.quorum.util.InitMessageCtx;
 import com.quorum.util.NotNull;
-import io.netty.buffer.ByteBuf;
-import io.netty.buffer.Unpooled;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -36,7 +34,6 @@ import java.nio.channels.SocketChannel;
 
 /**
  * State for each server used by QuorumBcast.
- * Created by powell on 11/8/15.
  */
 public class VotingChannel extends MsgChannel {
     private static final Logger LOG =
@@ -65,8 +62,8 @@ public class VotingChannel extends MsgChannel {
 
     private class WriteMsgCb implements MsgChannelCallable {
         private final ByteBuffer buf;
-        private final Callback cb;
-        public WriteMsgCb(ByteBuffer buf, Callback cb) {
+        private final Callback<MsgChannel> cb;
+        public WriteMsgCb(ByteBuffer buf, Callback<MsgChannel> cb) {
             this.buf = buf;
             this.cb = cb;
         }
@@ -82,25 +79,25 @@ public class VotingChannel extends MsgChannel {
         }
     }
 
-    private class WriteHdrDone implements Callback<Void> {
+    private class WriteHdrDone implements Callback<MsgChannel> {
         private final VotingChannel qc;
         public WriteHdrDone(VotingChannel qc) {
             this.qc = qc;
         }
 
-        public void call(final Void o)
+        public void call(final MsgChannel o)
                 throws ChannelException, IOException {
             this.qc.writeHdrDone();
         }
     }
 
-    private class WriteMsgDone implements Callback<Void> {
+    private class WriteMsgDone implements Callback<MsgChannel> {
         private final VotingChannel qc;
         public WriteMsgDone(VotingChannel qc) {
             this.qc = qc;
         }
 
-        public void call(final Void o)
+        public void call(final MsgChannel o)
                 throws ChannelException, IOException {
             this.qc.writeMsgDone();
         }
@@ -200,10 +197,10 @@ public class VotingChannel extends MsgChannel {
         this.electionAddr = electionAddr;
         this.selector = selector;
 
-        ReadMsgPipeline readVer = new ReadMsgPipeline(
-                new ReadVerDone(this), null);
-        readVer.add(new ReadVer());
-        registerReaderPipeline(readVer);
+        ReadMsgPipeline<Long> readVerPipeLine
+                = new ReadMsgPipeline<>(new ReadVerDone(this), null);
+        readVerPipeLine.add(new ReadVer());
+        registerReaderPipeline(readVerPipeLine);
         selector.registerRead(this);
         setState(State.CONNECTING);
     }
@@ -244,13 +241,7 @@ public class VotingChannel extends MsgChannel {
 
         // Build ByteBuffer
         // TODO: add API to Vote to get ByteBuffer directly?
-        ByteBuf b = voteToSend.buildMsg();
-        ByteBuffer msgToSend = ByteBuffer.allocate(Integer.BYTES
-                + b.readableBytes());
-        msgToSend.putInt(b.readableBytes());
-        b.readBytes(msgToSend);
-
-        msgToSend.flip();
+        ByteBuffer msgToSend = voteToSend.buildMsgForNio();
         WriteMsgCb writeCb = new WriteMsgCb(msgToSend, new WriteMsgDone(this));
         try {
             write(msgToSend);
@@ -314,11 +305,12 @@ public class VotingChannel extends MsgChannel {
         }
     }
 
+    @SuppressWarnings("unchecked")
     private void registerForMessage() throws ChannelException, IOException {
-        ReadMsgPipeline readMessage = new ReadMsgPipeline(
-                new ReadMessageDone(this), null);
+        ReadMsgPipeline<MessageCtx> readMessage
+                = new ReadMsgPipeline<>(new ReadMessageDone(this), null);
         readMessage.add(new ReadMsgLen())
-                .add(new ReadMessage());
+                        .add(new ReadMessage());
         registerReaderPipeline(readMessage);
         selector.registerRead(this);
         setState(State.READWRITE);
@@ -405,6 +397,7 @@ public class VotingChannel extends MsgChannel {
         }
     }
 
+    @SuppressWarnings("unchecked")
     private void gotProtocolVersion(Long protocolVersion)
             throws ChannelException, IOException {
         if (protocolVersion >= 0) {
@@ -414,7 +407,7 @@ public class VotingChannel extends MsgChannel {
             // read the full hdr
             InitMessageCtx initMsgCtx = new InitMessageCtx();
             initMsgCtx.protocolVersion = protocolVersion;
-            ReadMsgPipeline readHdr = new ReadMsgPipeline(
+            ReadMsgPipeline<InitMessageCtx> readHdr = new ReadMsgPipeline<>(
                     new ReadHdrDone(this), initMsgCtx);
             readHdr.add(new ReadSid())
                     .add(new ReadRemainer())
@@ -435,8 +428,12 @@ public class VotingChannel extends MsgChannel {
 
     private void gotMessage(MessageCtx ctx)
             throws ChannelException, IOException {
-        fromMsg = Vote.buildVote(Unpooled.buffer(
-                ctx.buf.remaining()).writeBytes(ctx.buf));
+        if (server == null) {
+            final String errStr = "Cannot get vote when server is unknown";
+            LOG.error(errStr);
+            throw new ChannelException(errStr);
+        }
+        fromMsg = Vote.buildVote(ctx.buf.remaining(), ctx.buf, server.id());
         readMsgCount++;
 
         // read next message.

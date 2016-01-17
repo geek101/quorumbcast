@@ -24,6 +24,8 @@ import com.quorum.util.ChannelException;
 import com.quorum.util.InitMessageCtx;
 import com.quorum.util.NotNull;
 import io.netty.buffer.ByteBuf;
+import io.netty.buffer.ByteBufAllocator;
+import io.netty.buffer.PooledByteBufAllocator;
 import io.netty.buffer.Unpooled;
 import io.netty.channel.*;
 
@@ -44,7 +46,8 @@ public abstract class VotingChannel extends NettyChannel<Long> {
     private QuorumServer server ;
     private final Callback<Vote> msgRxCb;
     private ByteBuf voteBuf; // used by message read state machine
-
+    private static ByteBufAllocator readBufAllocator
+            = PooledByteBufAllocator.DEFAULT;
     protected enum ReaderState {
         UNKNOWN, HDR, MSGLEN, MSG,
     }
@@ -171,7 +174,7 @@ public abstract class VotingChannel extends NettyChannel<Long> {
                 LOG.error(errStr);
                 throw new ChannelException(errStr);
             }
-            voteBuf = Unpooled.buffer(remainder + Integer.BYTES);
+            voteBuf = readBufAllocator.buffer(remainder + Integer.BYTES);
             voteBuf.writeInt(remainder);
             readerState = ReaderState.MSG;
         } else if (readerState == ReaderState.MSG) {
@@ -183,7 +186,7 @@ public abstract class VotingChannel extends NettyChannel<Long> {
 
             // Store the message in the in-bound map.
             try {
-                final Vote vote = Vote.buildVote(voteBuf);
+                final Vote vote = Vote.buildVote(voteBuf, server.id());
                 if (vote == null) {
                     throw new ChannelException(
                             "Invalid message received, closing channel");
@@ -198,6 +201,7 @@ public abstract class VotingChannel extends NettyChannel<Long> {
 
                 // Read timer is done so start the keep alive timer.
                 resetKeepAliveTimer();
+                voteBuf.release();
                 voteBuf = null;
                 readerState = ReaderState.MSGLEN;
             }

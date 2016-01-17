@@ -27,31 +27,30 @@ import java.util.ListIterator;
 
 /**
  * Helps with parse pipeline for incoming message.
- * Created by powell on 11/10/15.
  */
-public class ReadMsgPipeline implements IPipeline<MsgChannel> {
-    private List<ReadMsgCallback> readMsgCbList = null;
+public class ReadMsgPipeline<T> implements IPipeline<MsgChannel> {
+    private List<ReadMsgCallback<?>> readMsgCbList = null;
     private ListIterator iter = null;
-    private final Callback owner;
-    private Object result = null;
+    private final Callback<T> owner;
+    private T initData = null;
+    private ReadMsgCallback<?> prevCb = null;
 
     /**
      * Constructor that takes the owner as argument. Helps with
      * propogating the result.
      * @param owner Caller interface object
      */
-    public ReadMsgPipeline(Callback owner,
-                           Object ctx) {
+    public ReadMsgPipeline(Callback<T> owner, T ctx) {
         this.owner = owner;
-        this.result = ctx;
+        this.initData = ctx;
     }
 
-    public ReadMsgPipeline add(Object o) {
+    public ReadMsgPipeline add(ReadMsgCallback<?> o) {
         if (readMsgCbList == null) {
-            readMsgCbList = new ArrayList<ReadMsgCallback>();
-            readMsgCbList.add((ReadMsgCallback) o);
+            readMsgCbList = new ArrayList<>();
+            readMsgCbList.add(o);
         } else {
-            readMsgCbList.add((ReadMsgCallback) o);
+            readMsgCbList.add(o);
         }
         iter = readMsgCbList.listIterator();
         return this;
@@ -65,28 +64,33 @@ public class ReadMsgPipeline implements IPipeline<MsgChannel> {
     public void runNext(MsgChannel o)
             throws ChannelException, IOException {
         if (iter.hasNext()) {
-            ReadMsgCallback cb = (ReadMsgCallback)iter.next();
-            cb.readMsg(result, o);
+            ReadMsgCallback<?> cb
+                    = (ReadMsgCallback<?>) iter.next();
+            if (prevCb != null) {
+                cb.readMsg(prevCb.getResult(), o);
+            } else {
+                cb.readMsg(initData, o);
+            }
             if (cb.shouldRetry()) {
                 iter.previous();   // have to retry this again.
                 return;
             } else {
-                // store the result to push downward
-                this.result = cb.getResult();
+                // store the prev cb , used to propagate data downward
+                prevCb = cb;
             }
 
             // Check if we are done with the pipeline
             if (!iter.hasNext()) {
                 // Notify the owner of this pipeline
-                exit();
-                return;
+                callOwner();
             }
         } else {
             throw new ChannelException("No callback found!");
         }
     }
 
-    private void exit() throws ChannelException, IOException {
-        owner.call(result);
+    @SuppressWarnings("unchecked")
+    private void callOwner() throws ChannelException, IOException {
+        owner.call((T)prevCb.getResult());
     }
 }

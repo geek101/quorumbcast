@@ -47,7 +47,8 @@ public class SelectorDispatch {
     private Selector selector;                   /// Selector used
     private Map<SelectionKey, MsgChannel> channelMap
             = new HashMap<>();
-    private Callback acceptHandler = null;   /// Call on accept ready
+    private Callback<SocketChannel> acceptHandler = null;   /// Call on accept
+    // ready
 
     public SelectorDispatch(final InetSocketAddress listenAddr,
                             long timeout_ms)

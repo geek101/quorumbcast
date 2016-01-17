@@ -111,6 +111,7 @@ public class QuorumBroadcastTest extends BaseTest {
         eventLoopGroup.shutdownGracefully().sync();
     }
 
+    @SuppressWarnings("unchecked")
     public QuorumBroadcastTest(final String type,
                                final List<String> serverList,
                                final long readTimeoutMsec,
@@ -132,8 +133,7 @@ public class QuorumBroadcastTest extends BaseTest {
         for (Map.Entry<Long, QuorumServer> entry :
                 serverMap.entrySet()) {
             Long id = entry.getKey();
-            HashMap<Long, QuorumServer> mapCpy = new HashMap<>();
-            mapCpy = (HashMap)serverMap.clone();
+            HashMap<Long, QuorumServer> mapCpy = (HashMap)serverMap.clone();
             mapCpy.remove(id);
             List<QuorumServer> list = new ArrayList<>();
             list.addAll(mapCpy.values());
@@ -177,6 +177,7 @@ public class QuorumBroadcastTest extends BaseTest {
     /**
      * Test a random sender and message being received by rest of them.
      */
+    @SuppressWarnings("unchecked")
     @Test (timeout = 3500)
     public void testBroadcast() throws Exception {
         Vote v = new Vote (random.nextLong(), random.nextLong(),
