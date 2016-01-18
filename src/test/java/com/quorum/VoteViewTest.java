@@ -62,7 +62,7 @@ public class VoteViewTest extends BaseTest {
                 // SSL, ListenPortStart, Num of Views, ReadTimeout,
                 // ConnectTimeout, KeepAliveTimeout, KeepAliveCount, StartSid,
                 // EndSid
-                { "nio", 11111, 3, 0L, 0L, 0L, 0, 1L, 99L},
+                //{ "nio", 11111, 3, 0L, 0L, 0L, 0, 1L, 99L},
                 { "netty-ssl", 12222, 3, 0L, 0L, 0L, 0, 100L, 199L},
                 { "netty",  13333, 15, 500L, 10L, 200L, 3, 200L, 299L},
                 { "netty-ssl", 14444, 13, 2500L, 1000L, 200L, 3, 300L, 399L},

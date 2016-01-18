@@ -125,9 +125,15 @@ public abstract class NettyChannel<T> extends NettyChannelBase {
         resetTimer(keepAliveTask);
     }
 
-    protected void delayKeepAliveTimer() {
+    protected void delayKeepAliveWriteTimer() {
         if (keepAliveTask != null)  {
             keepAliveTask.setLastWrite();
+        }
+    }
+
+    protected void delayKeepAliveReadTimer() {
+        if (keepAliveTask != null)  {
+            keepAliveTask.setLastRead();
         }
     }
     protected void stopConnectTimer() throws ChannelException {
@@ -166,6 +172,7 @@ public abstract class NettyChannel<T> extends NettyChannelBase {
     public void connect(ChannelHandlerContext ctx, SocketAddress remoteAddress,
                 SocketAddress localAddress, ChannelPromise promise)
             throws Exception {
+        LOG.info("connect issued");
         if (connectTimeoutNanos != null) {
             connectTimeoutTask = new TimeoutTask(ctx,
                     connectTimeoutNanos, new ConnectTimeoutCb());
@@ -185,8 +192,6 @@ public abstract class NettyChannel<T> extends NettyChannelBase {
             readTimeoutTask = new TimeoutTask(ctx,
                     readTimeoutNanos, new ReadTimeoutCb());
         }
-
-
 
         stopTimer(connectTimeoutTask);
 
@@ -220,8 +225,8 @@ public abstract class NettyChannel<T> extends NettyChannelBase {
 
     @Override
     protected void sendMsg(Object msg) {
-        // On send we ensure keepalive task knows about this write.
-        delayKeepAliveTimer();
+        // On send we ensure keep-alive task knows about this write.
+        delayKeepAliveWriteTimer();
         super.sendMsg(msg);
     }
 
@@ -233,7 +238,10 @@ public abstract class NettyChannel<T> extends NettyChannelBase {
      */
     protected void connectTimeOut(ChannelHandlerContext ctx)
             throws ChannelException {
-        LOG.warn("connect timeout, closing channel");
+        if (stopProcessing) {
+            return;
+        }
+        LOG.info("connect timeout, closing channel");
         stopConnectTimer();
         errClose(ctx);
     }
@@ -244,6 +252,9 @@ public abstract class NettyChannel<T> extends NettyChannelBase {
      */
     protected void readTimeOut(ChannelHandlerContext ctx)
             throws ChannelException {
+        if (stopProcessing) {
+            return;
+        }
         LOG.error("read timeout, closing channel");
         stopReadTimer();
         errClose(ctx);
@@ -255,7 +266,10 @@ public abstract class NettyChannel<T> extends NettyChannelBase {
      */
     protected void keepAliveTimeOut(ChannelHandlerContext ctx)
             throws ChannelException {
-        LOG.warn("keepalive timeout, closing channel");
+        if (stopProcessing) {
+            return;
+        }
+        LOG.error("keepalive timeout, closing channel");
         stopKeepAliveTimer();
         errClose(ctx);
     }
@@ -281,8 +295,9 @@ public abstract class NettyChannel<T> extends NettyChannelBase {
             stopKeepAliveTimer();
         } catch (ChannelException exp) {
             LOG.info("error stopping timer tasks ignoring, exp: " + exp);
+        } finally {
+            ctx.close();
         }
-        ctx.close();
     }
 
     /**
@@ -302,9 +317,11 @@ public abstract class NettyChannel<T> extends NettyChannelBase {
                                                    // keepalive message
         private final Integer keepAliveCount;  /// No of timeout count for
                                                 // error.
-        private Long lastWriteTimeNanos;
-
+        private Long lastWriteTimeNanos;       /// Time since last write
+        private Long lastReadTimeNanos;        /// Time since last read
         private int keepAliveMissCount;
+
+        private long lastTimerRun = Long.MIN_VALUE;
         KeepAliveTask(final ChannelHandlerContext ctx,
                       final long keepAliveTimeoutNanos,
                       final Callback<ChannelHandlerContext> timeoutCb,
@@ -318,13 +335,27 @@ public abstract class NettyChannel<T> extends NettyChannelBase {
         @Override
         public void start() {
             setLastWrite();
+            setLastRead();
             super.start();
         }
 
+        /**
+         * If channel is active then this helps with delaying sending
+         * keep-alive messages.
+         */
         public void setLastWrite() {
-            LOG.info("resetting keepAliveMissCount");
-            keepAliveMissCount = 0;
+            LOG.debug("resetting keep-alive write side");
             lastWriteTimeNanos = System.nanoTime();
+        }
+
+        /**
+         * If we received a message then this channel is active, hence
+         * reset the last read time.
+         */
+        public void setLastRead() {
+            LOG.debug("resetting keep-alive read side");
+            keepAliveMissCount = 0;
+            lastReadTimeNanos = System.nanoTime();
         }
 
         /**
@@ -334,25 +365,87 @@ public abstract class NettyChannel<T> extends NettyChannelBase {
          */
         @Override
         protected void call() throws ChannelException, IOException {
+            // TODO: debug stuff, remove later?
+            checkTimerTriggerDelay();
+
+            // Mark last use so timeout timer keeps chugging along
             setLastUse();
-            if (++keepAliveMissCount > keepAliveCount) {
+
+            // On read timeout i.e kee[[AliveTimeoutNanos*keeyAliveCount
+            // call the timeout, which will close the connection.
+            if (checkReadTimeout()) {
+                super.call();
+            }
+
+            // Keep sending keep-alives if write side is idle.
+            sendKeepAliveMsgOnTimeout();
+        }
+
+        /**
+         * If last write is more than keepAliveTimeoutNanos then send
+         * a keep-alive message.
+         * @throws ChannelException
+         * @throws IOException
+         */
+        private void sendKeepAliveMsgOnTimeout() throws ChannelException,
+                IOException {
+            // if last write is well before this timeout then call send
+            if (System.nanoTime() > lastWriteTimeNanos) {
                 final long nextDelay = keepAliveTimeoutNanos -
                         (System.nanoTime() - lastWriteTimeNanos);
-                LOG.error("keepalive timeout with count: " +
-                        keepAliveMissCount + ", delay: "
-                        + TimeUnit.NANOSECONDS.toMillis(nextDelay));
-                super.call();
-            } else {
-                // if last write is well before this timeout then call send
-                if (System.nanoTime() > lastWriteTimeNanos) {
-                    final long nextDelay = keepAliveTimeoutNanos -
-                            (System.nanoTime() - lastWriteTimeNanos);
-                    if (nextDelay <= 0) {
-                        LOG.debug("Keepalive write timeout");
-                        keepAliveSend(ctx);
-                    }
+                if (nextDelay <= 0) {
+                    LOG.debug("Keep-alive write timeout");
+                    keepAliveSend(ctx);
                 }
             }
+        }
+
+        /**
+         * Check for Rx side message last received and count the misses, on
+         * timeout with required attempts call it.
+         * @return true on timeout, false otherwise, will update
+         * KeepAliveMissCount
+         */
+        private boolean checkReadTimeout() {
+            if (System.nanoTime() < lastReadTimeNanos) {
+                return false;
+            }
+
+            // Count misses
+            final long readDelay = (System.nanoTime() - lastReadTimeNanos);
+            if (readDelay >= keepAliveTimeoutNanos &&
+                    ++keepAliveMissCount > keepAliveCount) {
+                final long lastActiveDiff =
+                        (System.nanoTime() - lastWriteTimeNanos);
+                LOG.error("keep-alive timeout with count: " +
+                        keepAliveMissCount + ", delay: "
+                        + TimeUnit.NANOSECONDS.toMillis(lastActiveDiff)
+                        + " configured timeout: "
+                        + TimeUnit.NANOSECONDS.toMillis
+                        (keepAliveTimeoutNanos*keepAliveCount));
+                return true;
+            }
+
+            return false;
+        }
+
+        /**
+         * TODO: Is single thread a problem?. Throws RunTimeException on miss.
+         */
+        private void checkTimerTriggerDelay() {
+            if (lastTimerRun != Long.MIN_VALUE &&
+                    System.nanoTime() > lastTimerRun &&
+                    System.nanoTime() - lastTimerRun >
+                            2*keepAliveTimeoutNanos) {
+                LOG.error("fatal, keep-alive timer is unable to keep up, " +
+                        "delay since " + "last run: "
+                        + TimeUnit.NANOSECONDS.toMillis(
+                        System.nanoTime() - lastTimerRun)
+                        + " configured timeout: "
+                        + TimeUnit.NANOSECONDS.toMillis(keepAliveTimeoutNanos));
+                //throw new RuntimeException("timer unable to keep up");
+            }
+            lastTimerRun = System.nanoTime();
         }
     }
 

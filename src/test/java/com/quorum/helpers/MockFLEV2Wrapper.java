@@ -50,7 +50,7 @@ public class MockFLEV2Wrapper extends AbstractFLEV2Wrapper {
                 = super.lookForLeaderLoopUpdateHelper(votes);
         // Update our vote if leader is non null
         if (pair.getLeft() != null) {
-            updateSelfVote(catchUpToLeaderBeforeExit(pair.getLeft(),
+            updateSelfVote(catchUpToLeaderBeforeExitAndUpdate(pair.getLeft(),
                     getSelfVote())).get();
         }
         return ImmutablePair.of(pair.getLeft(), pair.getRight());

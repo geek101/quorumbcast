@@ -26,7 +26,9 @@ import com.quorum.util.ChannelException;
 import com.quorum.util.ErrCallback;
 import com.quorum.util.NotNull;
 import com.quorum.util.ZKTimerTask;
+import io.netty.channel.ChannelFuture;
 import io.netty.channel.EventLoopGroup;
+import org.apache.commons.lang3.concurrent.ConcurrentUtils;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -39,6 +41,7 @@ import java.util.ArrayList;
 import java.util.Collection;
 import java.util.Collections;
 import java.util.concurrent.Callable;
+import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.Future;
 import java.util.concurrent.FutureTask;
@@ -69,6 +72,7 @@ public class VotingChannelMgr extends NettyChannelMgr {
     // Object for the concurrent hashmap.
     private class ChannelHolder {
         private final QuorumServer server;
+        private ChannelFuture connectFuture = null;
         private VotingChannel votingChannel = null;
         private boolean removed = false;
 
@@ -96,6 +100,23 @@ public class VotingChannelMgr extends NettyChannelMgr {
 
         public boolean isRemoved() {
             return this.removed;
+        }
+
+        public void setConnecting(final ChannelFuture channelFuture) {
+            NotNull.check(channelFuture, "channel future is null", LOG);
+            this.connectFuture = channelFuture;
+        }
+
+        public void setConnected() {
+            this.connectFuture = null;
+        }
+
+        public void setDisconnected() {
+            this.connectFuture = null;
+        }
+
+        public boolean isConnecting() {
+            return connectFuture != null;
         }
     }
 
@@ -308,13 +329,13 @@ public class VotingChannelMgr extends NettyChannelMgr {
     }
 
     @Override
-    protected void startConnection(final AbstractServer server) {
+    protected ChannelFuture startConnection(final AbstractServer server) {
         QuorumServer quorumServer = (QuorumServer) server;
         long sid = quorumServer.id();
         if (!serverExists(sid)) {
             LOG.info("Server for sid: " + sid + " no longer exists" + "" +
                     "server: " + quorumServer);
-            return;
+            return null;
         }
 
         /**
@@ -325,7 +346,7 @@ public class VotingChannelMgr extends NettyChannelMgr {
             return;
         }
         */
-        super.startConnection(server);
+        return super.startConnection(server);
     }
 
     @Override
@@ -355,8 +376,7 @@ public class VotingChannelMgr extends NettyChannelMgr {
         QuorumServer quorumServer = (QuorumServer) server;
         if (!serverExists(server)) {
             LOG.warn("Connect succeeded to non existing server : " +
-                    quorumServer
-                    + ". Closing the channel.");
+                    quorumServer + ". Closing the channel.");
             if (handler != null) {
                 handler.close();
             }
@@ -371,10 +391,12 @@ public class VotingChannelMgr extends NettyChannelMgr {
                 LOG.debug("Channel connected handler: " + handler);
                 channelMap.get(quorumServer.id()).putChannel(
                         (VotingChannel) handler);
+                channelMap.get(quorumServer.id()).setConnected();
             } else {
-                LOG.warn("Channel already exists - closing current handler" +
-                        handler);
+                LOG.warn("Channel already exists - closing current handler"
+                        + handler);
                 handler.close();
+                channelMap.get(quorumServer.id()).setDisconnected();
             }
         }
     }
@@ -454,10 +476,10 @@ public class VotingChannelMgr extends NettyChannelMgr {
         return channelMap.get(sid).getQuorumChannel();
     }
 
-    private void initServer(final QuorumServer server)
+    private ChannelFuture initServer(final QuorumServer server)
             throws ChannelException {
         // start the connection.
-        startConnection(server);
+        return startConnection(server);
     }
 
     private void deInitServer(final QuorumServer server)
@@ -570,10 +592,15 @@ public class VotingChannelMgr extends NettyChannelMgr {
 
     private void initServers() {
         for (ChannelHolder channelHolder : channelMap.values()) {
-            if (channelHolder.getQuorumChannel() == null) {
+            if (channelHolder.getQuorumChannel() == null &&
+                    !channelHolder.isConnecting()) {
                 // Try to connect as long as the server is added.
                 try {
-                    initServer(channelHolder.getServer());
+                    final ChannelFuture connectFuture
+                            = initServer(channelHolder.getServer());
+                    if (connectFuture != null) {
+                        channelHolder.setConnecting(connectFuture);
+                    }
                 } catch (ChannelException exp) {
                     LOG.error("Error trying to add server: " +
                             channelHolder.getServer() + " exception: " + exp);

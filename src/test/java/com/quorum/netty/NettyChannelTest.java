@@ -399,7 +399,7 @@ public class NettyChannelTest extends BaseTest {
                 dataSendingKeepAliveChannel.keepAliveDisconnect);
     }
 
-    @Test //(timeout = 2000)
+    @Test (timeout = 2000)
     public void testKeepAliveNotTimeout() throws Exception {
         final long keepAliveTimeoutMsec = 200;
         final int keepAliveCount = 3;

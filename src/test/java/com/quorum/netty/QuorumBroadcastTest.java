@@ -61,6 +61,7 @@ public class QuorumBroadcastTest extends BaseTest {
     final long rgenseed = System.currentTimeMillis();
     Random random = new Random(rgenseed);
 
+    // TODO: make this a per broadcast class queue.
     private final ConcurrentLinkedQueue<Vote> inboundVoteQueue
             = new ConcurrentLinkedQueue<>();
 
@@ -84,8 +85,8 @@ public class QuorumBroadcastTest extends BaseTest {
             com.quorum.QuorumBroadcast qbcast
                     = QuorumBroadcastFactory.createQuorumBroadcast(type,
                     entry.getKey(), entry.getValue(),
-                    serverMap.get(entry.getKey()).getElectionAddr(), eventLoopGroup,
-                    readTimeoutMsec, connectTimeoutMsec,
+                    serverMap.get(entry.getKey()).getElectionAddr(),
+                    eventLoopGroup, readTimeoutMsec, connectTimeoutMsec,
                     keepAliveTimeoutMsec, keepAliveCount);
             if (qbcast == null) {
                 throw new NullPointerException("qbcast is invalid!, bailing");
@@ -225,6 +226,11 @@ public class QuorumBroadcastTest extends BaseTest {
         }
     }
 
+    @Test
+    public void runBroadcastAndWait() throws Exception {
+        testBroadcast();
+        Thread.sleep(10000);
+    }
     private com.quorum.QuorumBroadcast getSingleSender() {
         Iterator<Map.Entry<Long, com.quorum.QuorumBroadcast>> iter
                 = qbcastMap.entrySet().iterator();

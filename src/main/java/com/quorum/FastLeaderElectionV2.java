@@ -76,38 +76,69 @@ public class FastLeaderElectionV2 implements Election {
 
         public DefaultPredicate(final Collection<Vote> lastVotes) {
             lastVotesMap = new HashMap<>();
-            for (final Vote v : lastVotes) {
+            updateVotes(lastVotes);
+        }
+
+        /**
+         * Check if given votes are same as what we have.
+         * @param votes incoming vote set.
+         * @return false if same, true if different.
+         */
+        @Override
+        public Boolean call(final Collection<Vote> votes) {
+            if (lastVotesMap.size() != votes.size()) {
+                LOG.info("predicate failed for size mismatch , expected: "
+                        + lastVotesMap.size() + " got: " + votes.size());
+                return true;
+            }
+
+            for (final Vote v : votes) {
+                if (!lastVotesMap.containsKey(v.getSid()) ||
+                        !lastVotesMap.get(v.getSid()).match(v)) {
+                    if (lastVotesMap.containsKey(v.getSid())) {
+                        LOG.info("predicate failed for : " + v
+                                + " expected: " + lastVotesMap.get(v.getSid()));
+                    }
+                    return true;
+                }
+            }
+
+            return false;
+        }
+
+        protected void updateVotes(final Collection<Vote> votes) {
+            lastVotesMap.clear();
+            for (final Vote v : votes) {
                 lastVotesMap.put(v.getSid(), v);
             }
         }
 
-        @Override
-        public Boolean call(final Collection<Vote> votes) {
-            for (final Vote v : votes) {
-                if (!lastVotesMap.containsKey(v.getSid()) ||
-                        !lastVotesMap.get(v.getSid()).match(v)) {
-                    return true;
-                }
-            }
-            return lastVotesMap.size() < votes.size();
+        protected Map<Long, Vote> getVoteMap() {
+            return lastVotesMap;
         }
     }
 
     /**
-     * Leader Stability predicate helps with verifying leader stability check.
+     * Predicate to ensure that given a new set of votes and leader is still
+     * the same then stay stable. Break if a different leader is elected.
+     * This will not update self vote.
      */
-    private class LeaderStabilityPredicate extends
-            Predicate<Collection<Vote>> {
+    private class LeaderStabilityPredicate extends DefaultPredicate {
         private final Vote electedLeaderVote;
-        private final Map<Long, Vote> lastVotesMap;
 
         public LeaderStabilityPredicate(final Vote electedLeaderVote,
                                         final Collection<Vote> lastVotes) {
+            super(lastVotes);
             this.electedLeaderVote = electedLeaderVote;
-            lastVotesMap = new HashMap<>();
-            for (final Vote v : lastVotes) {
-                lastVotesMap.put(v.getSid(), v);
-            }
+        }
+
+        /**
+         * Return the last updated vote map when ended.
+         * @return
+         */
+        @Override
+        public Map<Long, Vote> getVoteMap() {
+            return super.getVoteMap();
         }
 
         /**
@@ -119,33 +150,32 @@ public class FastLeaderElectionV2 implements Election {
          */
         @Override
         public Boolean call(final Collection<Vote> votes) {
-            boolean votesChanged = false;
-            for (final Vote v : votes) {
-                if (!lastVotesMap.containsKey(v.getSid()) ||
-                        !lastVotesMap.get(v.getSid()).match(v)) {
-                    votesChanged = true;
-                    break;
-                }
-            }
-
-            if (!votesChanged && lastVotesMap.size() < votes.size()) {
+            if (!super.call(votes)) {
                 return false;
             }
 
-            final Vote stabilityCheckElectionVote
-                    = lookForLeaderLoopHelper(votes).getLeft();
+            LOG.info("something changed, running leader election again");
+            final ImmutableTriple<Vote, Vote, HashMap<Long, Vote>>
+                    triple = lookForLeaderLoopHelper(votes);
+            final Vote stabilityCheckElectionVote = triple.getLeft();
+            final Vote selfVote = triple.getMiddle();
+
             if (stabilityCheckElectionVote == null ||
-                    !stabilityCheckElectionVote.equals(
+                    // TODO: not break on leader changing ElectionEpoch?
+                    !stabilityCheckElectionVote.match(
                             this.electedLeaderVote)) {
                 if (stabilityCheckElectionVote != null) {
-                    LOG.info("broke stability for: " + stabilityCheckElectionVote);
+                    LOG.info("broke stability for: "
+                            + stabilityCheckElectionVote);
                 } else {
                     LOG.info("broke stability for null vote");
                 }
+                updateVotes(getUpdatedCollection(votes, selfVote));
                 return true;
             }
 
             LOG.info("was stable for leader: " + this.electedLeaderVote);
+            updateVotes(getUpdatedCollection(votes, selfVote));
             return false;
         }
     }
@@ -200,25 +230,34 @@ public class FastLeaderElectionV2 implements Election {
             }
 
             // Found a Vote, verify stability
-            votes = leaderStabilityCheckLoop(consumer, stableTimeout,
-                    stableTimeoutUnit, leaderElectedAndSelfVote.getLeft(),
-                    leaderElectedAndSelfVote.getRight(), votes);
-            if (votes == null) {
+            ImmutablePair<Vote, Collection<Vote>> stabilityPair =
+                    leaderStabilityCheckLoop(consumer, stableTimeout,
+                            stableTimeoutUnit,
+                            leaderElectedAndSelfVote.getLeft(),
+                            leaderElectedAndSelfVote.getRight(), votes);
+
+            final Vote stabilityUpdatedSelfVote = stabilityPair.getLeft();
+            if (stabilityPair.getRight() == null) {
                 final Vote selfFinalVote
-                        = catchUpToLeaderBeforeExit(
+                        = catchUpToLeaderBeforeExitAndUpdate(
                         leaderElectedAndSelfVote.getLeft(),
-                        leaderElectedAndSelfVote.getRight());
+                        stabilityUpdatedSelfVote);
                 LOG.info("elected leader, self vote: " + selfFinalVote);
                 voteViewConsumerCtrl.removeConsumer(consumer);
                 return selfFinalVote;
             }
 
+            // Set our self vote which could have been potentially updated
+            // by stability check.
+            updateSelfVote(stabilityUpdatedSelfVote);
+            votes = getUpdatedCollection(stabilityPair.getRight(),
+                    stabilityUpdatedSelfVote);
             LOG.info("leader stability failed, trying again");
         }
     }
 
-    protected Vote catchUpToLeaderBeforeExit(final Vote leaderVote,
-                                             final Vote selfVote)
+    protected Vote catchUpToLeaderBeforeExitAndUpdate(final Vote leaderVote,
+                                                      final Vote selfVote)
             throws InterruptedException, ExecutionException {
         // We are done, catch up to leader vote and break the loop.
         QuorumPeer.ServerState targetState
@@ -238,7 +277,8 @@ public class FastLeaderElectionV2 implements Election {
      * @param timeout
      * @param unit
      * @param votes   the starting view, we update it and use it.
-     * @return Vote which is the elected leader if it did else null.
+     * @return Vote which is the elected leader if it did else null and our
+     * updated Vote.
      * @throws ElectionException
      * @throws InterruptedException
      * @throws ExecutionException
@@ -844,7 +884,7 @@ public class FastLeaderElectionV2 implements Election {
      * @throws InterruptedException
      * @throws ExecutionException
      */
-    private Collection<Vote> leaderStabilityCheckLoop(
+    private ImmutablePair<Vote, Collection<Vote>> leaderStabilityCheckLoop(
             final VoteViewChangeConsumer consumer, final int timeout,
             final TimeUnit unit, final Vote leaderElectedVote,
             final Vote selfUpdatedVote, final Collection<Vote> lastVotes)
@@ -852,9 +892,18 @@ public class FastLeaderElectionV2 implements Election {
         NotNull.check(leaderElectedVote, "leader vote is null", LOG);
         final Collection<Vote> lastVotesUpdated = getUpdatedCollection(
                 lastVotes, selfUpdatedVote);
-        return consumer.consume(timeout, unit,
+        final LeaderStabilityPredicate predicate =
                 getLeaderStabilityPredicate(leaderElectedVote,
-                        lastVotesUpdated));
+                        lastVotesUpdated);
+
+        // Run with consumer predicate.
+        final Collection<Vote> consumerVotes
+                = consumer.consume(timeout, unit, predicate);
+
+        // Return self Vote which might have been updated! and return value
+        // of consumer.
+        return ImmutablePair.of(predicate.getVoteMap().get(getId()),
+                consumerVotes);
     }
 
     /**
@@ -979,11 +1028,12 @@ public class FastLeaderElectionV2 implements Election {
         Vote selfVote = null;
         for (final Vote v : votes) {
             if (v.getSid() == mySid) {
-                return v;
+                selfVote = v;
+                break;
             }
         }
         NotNull.check(selfVote, "self vote must be found in the set.", LOG);
-        return null;
+        return selfVote;
     }
 
     private Vote getSelfVote() {

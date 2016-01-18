@@ -128,7 +128,7 @@ public abstract class NettyChannelMgr {
         }
     }
 
-    protected void startConnection(final AbstractServer server) {
+    protected ChannelFuture startConnection(final AbstractServer server) {
         Bootstrap clientBootstrap = new Bootstrap();
         clientBootstrap.group(group)
                 .channel(NioSocketChannel.class)
@@ -138,7 +138,7 @@ public abstract class NettyChannelMgr {
                 .option(ChannelOption.SO_LINGER, 0);
 
         // Create an new Channel.
-        clientBootstrap.connect(server.getElectionAddr())
+        return clientBootstrap.connect(server.getElectionAddr())
                 .addListener(new ConnectListener(server));
     }
 

@@ -355,13 +355,15 @@ public class BaseTest {
         return buf;
     }
 
-    protected void socketIsClosed(final Socket socket)
+    protected void socketIsClosed(final Socket socket, final ByteBuf buf)
             throws InterruptedException, IOException {
         while(!socket.isClosed()) {
             Thread.sleep(100);
             try {
                 socket.getInputStream().read();
-                socket.getOutputStream().write(new byte[4]);
+                if (buf != null) {
+                    writeBufToSocket(buf, socket);
+                }
             } catch (IOException exp) {
                 LOG.info("client socket read exp: {}", exp);
                 throw exp;

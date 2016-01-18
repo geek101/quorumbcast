@@ -164,8 +164,8 @@ public abstract class VotingChannel extends NettyChannel<Long> {
             // Length received start the timer.
             resetReadTimer(ctx);
 
-            // Read timer is set so stop keep alive timer.
-            delayKeepAliveTimer();
+            // Read timer is set so delay keep alive timer.
+            delayKeepAliveReadTimer();
 
             final int remainder = inBuf.readInt();
             if (remainder == 0) {
@@ -200,8 +200,8 @@ public abstract class VotingChannel extends NettyChannel<Long> {
                 // Msg received hence stop the timer.
                 stopReadTimer(ctx);
 
-                // Read timer is done so start the keep alive timer.
-                delayKeepAliveTimer();
+                // Finished reading a message so delay keep alive.
+                delayKeepAliveReadTimer();
 
                 voteBuf.clear();
                 readerState = ReaderState.MSGLEN;

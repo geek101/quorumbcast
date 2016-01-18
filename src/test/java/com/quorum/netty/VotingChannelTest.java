@@ -180,7 +180,7 @@ public class VotingChannelTest extends BaseTest {
         }
 
         // Verify that the above triggers a disconnect
-        socketIsClosed(socket);
+        socketIsClosed(socket, null);
 
         listenFuture.sync().channel().close().sync();
     }
@@ -244,7 +244,7 @@ public class VotingChannelTest extends BaseTest {
         writeBufToSocket(voteLenBuf, socket);
 
         // assert that votingClientChannel does timeout and disconnects
-        socketIsClosed(socket);
+        socketIsClosed(socket, null);
     }
 
     /**
@@ -276,7 +276,7 @@ public class VotingChannelTest extends BaseTest {
             throw new RuntimeException(exp);
         }
 
-        socketIsClosed(socket);
+        socketIsClosed(socket, null);
         listenFuture.sync().channel().close().sync();
     }
 
@@ -286,7 +286,7 @@ public class VotingChannelTest extends BaseTest {
             NoSuchAlgorithmException, InterruptedException, ChannelException {
         ImmutableTriple<VotingClientChannel, Socket, Vote> triple
                 = clientChannelConnectHdrAndVoteAssert(
-                PortAssignment.unique(), client1, 100L, 3);
+                PortAssignment.unique(), client1, 50L, 3);
 
         final VotingClientChannel votingClientChannel = triple.getLeft();
         final Socket socket = triple.getMiddle();
@@ -296,7 +296,12 @@ public class VotingChannelTest extends BaseTest {
         readSameVoteVerify(3, socket, v);
 
         // assert that votingClientChannel does timeout and disconnects
-        socketIsClosed(socket);
+        // assert that votingClientChannel does timeout and disconnects
+        while(votingClientChannel.getChannel().isActive()) {
+            Thread.sleep(10);
+        }
+
+        socketIsClosed(socket, voteBuf);
 
         assertTrue("client channel closed",
                 !votingClientChannel.getChannel().isActive());
@@ -308,7 +313,7 @@ public class VotingChannelTest extends BaseTest {
             InterruptedException, ChannelException {
         ImmutableTriple<VotingClientChannel, Socket, Vote> triple
                 = clientChannelConnectHdrAndVoteAssert(
-                PortAssignment.unique(), client1, 100L, 3);
+                PortAssignment.unique(), client1, 50L, 3);
 
         final VotingClientChannel votingClientChannel = triple.getLeft();
         final Socket socket = triple.getMiddle();
@@ -325,10 +330,15 @@ public class VotingChannelTest extends BaseTest {
         readSameVoteVerify(3, socket, v);
 
         // assert that votingClientChannel does timeout and disconnects
-        socketIsClosed(socket);
+        while(votingClientChannel.getChannel().isActive()) {
+            Thread.sleep(10);
+        }
+
+        socketIsClosed(socket, replyVote.buildMsg());
 
         assertTrue("client channel closed",
                 !votingClientChannel.getChannel().isActive());
+        votingClientChannel.close();
     }
 
     private void readSameVoteVerify(final int count, final Socket socket,
@@ -341,7 +351,7 @@ public class VotingChannelTest extends BaseTest {
 
             final Vote vRx = Vote.buildVote(voteReadBuf, vote.getSid());
             assertTrue("vote received - " + count, vRx.match(vote));
-            LOG.info("verified vote count[max-" + count + ": " + i);
+            LOG.info("verified vote count[max-" + count + "]: " + i);
         }
     }
 
@@ -425,7 +435,7 @@ public class VotingChannelTest extends BaseTest {
         serverSocket = newServerAndBindTest(listenServer, 0);
         final VotingClientChannel votingClientChannel
                 = new VotingClientChannel(from.id(), from.getElectionAddr(),
-                from, READ_TIMEOUT_MS, CONNECT_TIMEOUT_MS,
+                listenServer, READ_TIMEOUT_MS, CONNECT_TIMEOUT_MS,
                 keepAliveTimeoutMsec, keepAliveCount, msgRxCb);
 
         try {

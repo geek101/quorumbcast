@@ -158,7 +158,6 @@ public class Vote {
         }
         Vote other = (Vote) o;
         
-        
         /*
          * There are two things going on in the logic below.
          * First, we compare votes of servers out of election
@@ -432,8 +431,8 @@ public class Vote {
      */
     public Vote leaderElectionVote(final long peerEpoch, final long zxid) {
         return new Vote(this.getVersion(), this.getSid(), zxid,
-                this.getElectionEpoch()+1, peerEpoch, this.getSid(),
-                QuorumPeer.ServerState.LOOKING);
+                this.getElectionEpoch()+1 <= 0 ? 1 : this.getElectionEpoch()+1,
+                peerEpoch, this.getSid(), QuorumPeer.ServerState.LOOKING);
     }
     /**
      * Used by leader election to  increase electionEpoch of other Vote.

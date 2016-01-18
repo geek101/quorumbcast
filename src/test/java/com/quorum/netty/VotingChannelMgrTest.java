@@ -88,7 +88,7 @@ public class VotingChannelMgrTest extends BaseTest {
                 //{ "ssl", 25555, 0L, 0L, 0L, 0, 100L, 199L},
                 { "plain", PortAssignment.unique(), 100, 10, 100L, 3, 200L,
                         299L},
-                { "ssl", PortAssignment.unique(), 100L, 10L, 100L, 3, 300L,
+                { "ssl", PortAssignment.unique(), 300L, 200L, 100L, 3, 300L,
                         399L},
     });}
 
@@ -167,7 +167,7 @@ public class VotingChannelMgrTest extends BaseTest {
         writeBufToSocket(buildHdr(client1.id(), client1.getElectionAddr()),
                 clientSocket);
 
-        socketIsClosed(clientSocket);
+        socketIsClosed(clientSocket, null);
     }
 
     @Test (timeout = 1000)
@@ -177,7 +177,7 @@ public class VotingChannelMgrTest extends BaseTest {
         socketPairClose(oneServerDuplexHelper(client1, 1));
     }
 
-    @Test (expected = SocketException.class)
+    @Test (timeout = 2000, expected = SocketException.class)
     public void oneServerDeInit() throws IOException,
             NoSuchAlgorithmException, X509Exception, CertificateException,
             ChannelException, InterruptedException {
@@ -188,7 +188,7 @@ public class VotingChannelMgrTest extends BaseTest {
         votingChannelMgr.removeServer(client1);
 
         // Verify that the above triggers a disconnect
-        socketIsClosed(socketPair.getRight());
+        socketIsClosed(socketPair.getRight(), null);
 
         socketPairClose(socketPair);
     }
@@ -210,7 +210,7 @@ public class VotingChannelMgrTest extends BaseTest {
         boolean closedCheck = false;
         // Ensure the previous incoming channel is closed.
         try {
-            socketIsClosed(socketPair.getRight());
+            socketIsClosed(socketPair.getRight(), null);
         } catch (SocketException exp) {
             closedCheck = true;
         }

@@ -52,7 +52,7 @@ public class FLEV2CombValidLeaderElectTest extends BaseTest {
     private final List<QuorumServer> quorumServerList = new ArrayList<>();
     private final Long readTimeoutMsec = 300L;
     private final Long connectTimeoutMsec = 500L;
-    private final Long keepAliveTimeoutMsec = 150L;
+    private final Long keepAliveTimeoutMsec = 100L;
     private final Integer keepAliveCount = 3;
 
     @Parameterized.Parameters
@@ -122,7 +122,7 @@ public class FLEV2CombValidLeaderElectTest extends BaseTest {
      * @throws InterruptedException
      * @throws ExecutionException
      */
-    @Test (timeout = 1000*300)
+    @Test (timeout = 1000*500)
     public void testLeaderForCombinations()
             throws ElectionException, InterruptedException, ExecutionException {
         long count = 0;

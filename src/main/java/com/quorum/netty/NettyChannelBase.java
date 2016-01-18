@@ -39,9 +39,6 @@ public abstract class NettyChannelBase extends ByteToMessageDecoderImpl {
 
     @Override
     public void channelActive(ChannelHandlerContext ctx) {
-        prefixStr = getPrefix(ctx.channel());
-        LOG.appendPrefix(prefixStr);
-
         try {
             connected(ctx);
             super.channelActive(ctx);
@@ -49,6 +46,9 @@ public abstract class NettyChannelBase extends ByteToMessageDecoderImpl {
             LOG.error("Exception on active: " + exp);
             errClose(ctx);
         }
+
+        prefixStr = getPrefix(ctx.channel());
+        LOG.appendPrefix(prefixStr);
     }
 
     /**
