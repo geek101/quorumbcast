@@ -21,6 +21,7 @@ import com.quorum.flexible.QuorumVerifier;
 import com.quorum.util.LogPrefix;
 import com.quorum.util.NotNull;
 import com.quorum.util.Predicate;
+import org.apache.commons.lang3.SystemUtils;
 import org.apache.commons.lang3.tuple.ImmutablePair;
 import org.apache.commons.lang3.tuple.ImmutableTriple;
 import org.slf4j.Logger;
@@ -32,6 +33,7 @@ import java.util.Collections;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.Map;
+import java.util.Random;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.Future;
 import java.util.concurrent.TimeUnit;
@@ -49,6 +51,7 @@ public class FastLeaderElectionV2 implements Election {
     private final int stableTimeout;
     private final TimeUnit stableTimeoutUnit;
     protected LogPrefix LOG = null;
+    private final Random random = new Random();
 
     public FastLeaderElectionV2(
             final long mySid, final QuorumPeer.LearnerType learnerType,
@@ -66,6 +69,7 @@ public class FastLeaderElectionV2 implements Election {
         this.stableTimeoutUnit = stableTimeoutUnit;
         this.LOG = new LogPrefix(LOGS, "mySid:" + this.mySid +
                 "-electionEpoch:0");
+        this.random.setSeed(System.nanoTime() ^ this.mySid);
     }
 
     /**
@@ -87,16 +91,19 @@ public class FastLeaderElectionV2 implements Election {
         @Override
         public Boolean call(final Collection<Vote> votes) {
             if (lastVotesMap.size() != votes.size()) {
-                LOG.info("predicate failed for size mismatch , expected: "
-                        + lastVotesMap.size() + " got: " + votes.size());
+                if (LOG.isDebugEnabled()) {
+                    LOG.debug("predicate failed for size mismatch , expected: "
+                            + lastVotesMap.size() + " got: " + votes.size());
+                }
                 return true;
             }
 
             for (final Vote v : votes) {
                 if (!lastVotesMap.containsKey(v.getSid()) ||
                         !lastVotesMap.get(v.getSid()).match(v)) {
-                    if (lastVotesMap.containsKey(v.getSid())) {
-                        LOG.info("predicate failed for : " + v
+                    if (LOG.isDebugEnabled() &&
+                            lastVotesMap.containsKey(v.getSid())) {
+                        LOG.debug("predicate failed for : " + v
                                 + " expected: " + lastVotesMap.get(v.getSid()));
                     }
                     return true;
@@ -154,7 +161,7 @@ public class FastLeaderElectionV2 implements Election {
                 return false;
             }
 
-            LOG.info("something changed, running leader election again");
+            LOG.debug("something changed, running leader election again");
             final ImmutableTriple<Vote, Vote, HashMap<Long, Vote>>
                     triple = lookForLeaderLoopHelper(votes);
             final Vote stabilityCheckElectionVote = triple.getLeft();
@@ -174,7 +181,9 @@ public class FastLeaderElectionV2 implements Election {
                 return true;
             }
 
-            LOG.info("was stable for leader: " + this.electedLeaderVote);
+            if (LOG.isDebugEnabled()) {
+                LOG.debug("was stable for leader: " + this.electedLeaderVote);
+            }
             updateVotes(getUpdatedCollection(votes, selfVote));
             return false;
         }
@@ -212,8 +221,11 @@ public class FastLeaderElectionV2 implements Election {
         // let us broadcast this and  wait till that is done.
         updateSelfVote(selfVote).get();
 
-        this.LOG.resetPrefix("mySid:" + this.mySid +
-                "-electionEpoch:" + selfVote.getElectionEpoch());
+        LOG.resetPrefix("mySid:" + getId() + "-electionEpoch:"
+                + selfVote.getElectionEpoch());
+
+        LOG.info("Entering FLEV2 with vote: " + selfVote);
+
         // Create and get the change consumer.
         final VoteViewChangeConsumer consumer
                 = voteViewConsumerCtrl.createChangeConsumer();
@@ -229,9 +241,11 @@ public class FastLeaderElectionV2 implements Election {
                 continue;
             }
 
+            final int fuzzyStableTimeout = stableTimeout
+                    + random.nextInt(stableTimeout/2);
             // Found a Vote, verify stability
             ImmutablePair<Vote, Collection<Vote>> stabilityPair =
-                    leaderStabilityCheckLoop(consumer, stableTimeout,
+                    leaderStabilityCheckLoop(consumer, fuzzyStableTimeout,
                             stableTimeoutUnit,
                             leaderElectedAndSelfVote.getLeft(),
                             leaderElectedAndSelfVote.getRight(), votes);
@@ -242,7 +256,7 @@ public class FastLeaderElectionV2 implements Election {
                         = catchUpToLeaderBeforeExitAndUpdate(
                         leaderElectedAndSelfVote.getLeft(),
                         stabilityUpdatedSelfVote);
-                LOG.info("elected leader, self vote: " + selfFinalVote);
+                leaveInstance(selfFinalVote);
                 voteViewConsumerCtrl.removeConsumer(consumer);
                 return selfFinalVote;
             }
@@ -397,8 +411,10 @@ public class FastLeaderElectionV2 implements Election {
             return votes;
         }
 
-        for (final Vote v : votes.values()) {
-            LOG.info("lookingElectionEpochConverge: " + v);
+        if (LOG.isDebugEnabled()) {
+            for (final Vote v : votes.values()) {
+                LOG.info("lookingElectionEpochConverge: " + v);
+            }
         }
 
         // Our vote after being updated for election epoch
@@ -455,8 +471,10 @@ public class FastLeaderElectionV2 implements Election {
                     selfVote = selfVote.setElectionEpoch(vote);
                 }
                 if (totalOrderPredicate(vote, selfVote)) {
-                    LOG.debug("Found better Election epoch and Total Order " +
-                            "Predicate: " + vote);
+                    if (LOG.isDebugEnabled()) {
+                        LOG.debug("Found better Election epoch and Total Order " +
+                                "Predicate: " + vote);
+                    }
                     selfVote = updateProposal(vote, selfVote);
                 }
             }
@@ -500,8 +518,10 @@ public class FastLeaderElectionV2 implements Election {
      * @throws ExecutionException
      */
     protected Vote leaderFromView(final HashMap<Long, Vote> voteMap) {
-        for (final Vote v : voteMap.values()) {
-            LOG.info("leaderFromView: " + v);
+        if (LOG.isDebugEnabled()) {
+            for (final Vote v : voteMap.values()) {
+                LOG.info("leaderFromView: " + v);
+            }
         }
         final Collection<Vote> highestPeerEpochAndZxidGroup =
                 getHighestPeerEpochAndZxidGroup(voteMap);
@@ -521,14 +541,18 @@ public class FastLeaderElectionV2 implements Election {
         }
 
         if (!quorumVerifier.containsQuorum(quorumForLeaderElected)) {
-            LOG.info("No quorum for Leader elected, Vote: "
-                    + leaderElectedVote + " with count:"
-                    + quorumForLeaderElected.size());
+            if (LOG.isDebugEnabled()) {
+                LOG.debug("No quorum for Leader elected, Vote: "
+                        + leaderElectedVote + " with count:"
+                        + quorumForLeaderElected.size());
+            }
             return null;
         }
 
-        LOG.info("Quorum for Leader elected, Vote: " + leaderElectedVote
-                + " with count:" + quorumForLeaderElected.size());
+        if (LOG.isDebugEnabled()) {
+            LOG.debug("Quorum for Leader elected, Vote: " + leaderElectedVote
+                    + " with count:" + quorumForLeaderElected.size());
+        }
         // For peace of mind!, if we picked someone else ensure
         // that that vote thinks its a leader.
         assert leaderElectedVote.getSid() == getId() ||
@@ -623,7 +647,7 @@ public class FastLeaderElectionV2 implements Election {
     protected Collection<Vote>
     getHighestPeerEpochAndZxidGroup(final HashMap<Long, Vote> voteMap) {
         if (voteMap == null || voteMap.isEmpty()) {
-            LOG.info("votes are null or empty, cannot find leader");
+            LOG.debug("votes are null or empty, cannot find leader");
             return null;
         }
 
@@ -664,14 +688,16 @@ public class FastLeaderElectionV2 implements Election {
         final HashSet<Long> quorumSetForHighZAndP
                 = peerEpochAndZxidCountMap.get(highestPeerEpochAndZxid);
         // LOG if there is a majority with best PeerEpochAndZxid
-        if (!quorumVerifier.containsQuorum(quorumSetForHighZAndP)) {
-            LOG.info("Not enough quorum for highestPeerEpochAndZxid : "
-                    + highestPeerEpochAndZxid + " size: " +
-                    quorumSetForHighZAndP.size());
-        } else {
-            LOG.info("Quorum found for highestPeerEpochAndZxid : "
-                    + highestPeerEpochAndZxid + " size: " +
-                    quorumSetForHighZAndP.size());
+        if (LOG.isDebugEnabled()) {
+            if (!quorumVerifier.containsQuorum(quorumSetForHighZAndP)) {
+                LOG.debug("Not enough quorum for highestPeerEpochAndZxid : "
+                        + highestPeerEpochAndZxid + " size: " +
+                        quorumSetForHighZAndP.size());
+            } else {
+                LOG.debug("Quorum found for highestPeerEpochAndZxid : "
+                        + highestPeerEpochAndZxid + " size: " +
+                        quorumSetForHighZAndP.size());
+            }
         }
 
         final Collection<Vote> quorumVotesForHighZAndP = new ArrayList<>();
@@ -796,21 +822,27 @@ public class FastLeaderElectionV2 implements Election {
 
         if (vote.getLeader() != getId()) {
             if (voteMap.get(vote.getLeader()) == null) {
-                LOG.debug("Ignore non existent leader, Vote: " + vote);
+                if (LOG.isDebugEnabled()) {
+                    LOG.debug("Ignore non existent leader, Vote: " + vote);
+                }
                 predicate = false;
             } else if (voteMap.get(vote.getLeader()).getLeader() !=
                     voteMap.get(vote.getLeader()).getSid() ||
                     voteMap.get(vote.getLeader()).getState()
                             != QuorumPeer.ServerState.LEADING) {
-                LOG.debug("Ignore leader that did not elect itself, Vote: "
-                        + vote + " leader vote: "
-                        + voteMap.get(vote.getLeader()));
+                if (LOG.isDebugEnabled()) {
+                    LOG.debug("Ignore leader that did not elect itself, Vote: "
+                            + vote + " leader vote: "
+                            + voteMap.get(vote.getLeader()));
+                }
                 predicate = false;
             }
         } else if (voteMap.get(getId()).getElectionEpoch()
                 != vote.getElectionEpoch()) {
-            LOG.debug("we cannot be leader, election epoch mismatch, Vote: "
-                    + vote);
+            if (LOG.isDebugEnabled()) {
+                LOG.debug("we cannot be leader, election epoch mismatch, Vote: "
+                        + vote);
+            }
             predicate = false;
         }
 
@@ -849,24 +881,16 @@ public class FastLeaderElectionV2 implements Election {
 
         if(vote.getLeader() != getId()){
             if(voteMap.get(vote.getLeader()) == null) {
-                LOG.info("Ignore non existent leader, Vote: " + vote);
                 predicate = false;
             }
             else if(voteMap.get(vote.getLeader()).getState()
                     != QuorumPeer.ServerState.LEADING) {
-                LOG.info("Ignore leader that did not elect itself, Vote: "
-                        + vote + " leader vote: "
-                        + voteMap.get(vote.getLeader()));
                 predicate = false;
             }
         } else if(voteMap.get(vote.getLeader()) == null) {
-            LOG.info("We got elected but we do not have highest zxid, Vote: "
-            + vote);
             predicate = false;
         } else if (voteMap.get(vote.getLeader()).getElectionEpoch() !=
                     vote.getElectionEpoch()) {
-            LOG.info("we cannot be leader, election epoch mismatch, Vote: "
-                    + vote);
             predicate = false;
         }
 
@@ -950,12 +974,14 @@ public class FastLeaderElectionV2 implements Election {
     private boolean totalOrderPredicate(long newId, long newZxid,
                                         long newEpoch, long curId,
                                         long curZxid, long curEpoch) {
-        LOG.debug("totalOrderPredicate: proposed leader: " + newId + ", " +
-                "leader: " + curId
-                + ", proposed  zxid: 0x" + Long.toHexString(newZxid)
-                + ", zxid: 0x" + Long.toHexString(curZxid)
-                + ", proposed peerEpoch: 0x" + Long.toHexString(newEpoch)
-                + ", peerEpoch: 0x" + Long.toHexString(curEpoch));
+        if (LOG.isDebugEnabled()) {
+            LOG.debug("totalOrderPredicate: proposed leader: " + newId + ", " +
+                    "leader: " + curId
+                    + ", proposed  zxid: 0x" + Long.toHexString(newZxid)
+                    + ", zxid: 0x" + Long.toHexString(curZxid)
+                    + ", proposed peerEpoch: 0x" + Long.toHexString(newEpoch)
+                    + ", peerEpoch: 0x" + Long.toHexString(curEpoch));
+        }
         if (quorumVerifier.getWeight(newId) == 0) {
             return false;
         }
@@ -1072,12 +1098,7 @@ public class FastLeaderElectionV2 implements Election {
     }
 
     private void leaveInstance(final Vote v) {
-        if (LOGS.isDebugEnabled()) {
-            LOG.debug("About to leave FLE instance: leader="
-                    + v.getLeader() + ", zxid=0x" +
-                    Long.toHexString(v.getZxid()) + ", my id=" + getId()
-                    + ", my state=" + v.getState());
-        }
+        LOG.info("Leaving FLEV2 instance with vote: " + v);
     }
 
     /**

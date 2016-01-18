@@ -430,9 +430,13 @@ public class Vote {
      * @return a new Vote.
      */
     public Vote leaderElectionVote(final long peerEpoch, final long zxid) {
+        long increasedElectionEpoch = 1L;
+        if (this.getElectionEpoch() > increasedElectionEpoch) {
+            increasedElectionEpoch = this.getElectionEpoch() + 1L;
+        }
         return new Vote(this.getVersion(), this.getSid(), zxid,
-                this.getElectionEpoch()+1 <= 0 ? 1 : this.getElectionEpoch()+1,
-                peerEpoch, this.getSid(), QuorumPeer.ServerState.LOOKING);
+                increasedElectionEpoch, peerEpoch, this.getSid(),
+                QuorumPeer.ServerState.LOOKING);
     }
     /**
      * Used by leader election to  increase electionEpoch of other Vote.

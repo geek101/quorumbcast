@@ -61,9 +61,6 @@ import static com.quorum.util.InitMessageCtx.getAddrString;
 import static io.netty.buffer.Unpooled.buffer;
 import static org.junit.Assert.assertTrue;
 
-/**
- * Created by powell on 12/7/15.
- */
 public class BaseTest {
     protected static final Logger LOG = LoggerFactory.getLogger(
             BaseTest.class.getName());
@@ -363,6 +360,8 @@ public class BaseTest {
                 socket.getInputStream().read();
                 if (buf != null) {
                     writeBufToSocket(buf, socket);
+                } else {
+                    socket.getOutputStream().write(new byte[1]);
                 }
             } catch (IOException exp) {
                 LOG.info("client socket read exp: {}", exp);
