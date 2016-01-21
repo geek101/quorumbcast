@@ -64,13 +64,6 @@ public abstract class VoteViewBase extends VoteViewChange
         }
     }
 
-    protected VoteViewBase(final long mySid,
-                           final EventLoopGroup eventLoopGroup) {
-        super(mySid);
-        this.group = eventLoopGroup;
-        this.self = this;
-    }
-
     public VoteViewBase(final long mySid) {
         this(mySid, new NioEventLoopGroup(MAX_THREAD_COUNT,
                 Executors.newSingleThreadExecutor(new ThreadFactory() {

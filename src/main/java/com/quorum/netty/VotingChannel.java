@@ -55,6 +55,7 @@ public abstract class VotingChannel extends NettyChannel<Long> {
     protected ReaderState readerState = ReaderState.UNKNOWN;
 
     private Vote voteSent;    /// The last Vote sent.
+    private Vote voteRcv;     /// The last Vote received.
 
     private static final WriteListener WRITE_ERR_LISTENER = new WriteListener();
 
@@ -192,7 +193,12 @@ public abstract class VotingChannel extends NettyChannel<Long> {
                     throw new ChannelException(
                             "Invalid message received, closing channel");
                 }
-                msgRxCb.call(vote);
+
+                if (voteRcv == null ||
+                        !vote.match(voteRcv)) {
+                    msgRxCb.call(vote);
+                    voteRcv = vote;
+                }
             } catch (ChannelException | IOException exp) {
                 LOG.error("Error processing msg from server: " + server);
                 errClose(ctx);

@@ -54,7 +54,8 @@ public class VoteViewMockBcast extends VoteViewBase {
                         thread.setUncaughtExceptionHandler(
                                 new Thread.UncaughtExceptionHandler() {
                                     @Override
-                                    public void uncaughtException(Thread t, Throwable e) {
+                                    public void uncaughtException(Thread t,
+                                                                  Throwable e) {
                                         LOG.error("Uncaught Exception", e);
                                         System.exit(1);
                                     }

@@ -56,15 +56,15 @@ public class VoteView extends VoteViewBase {
                        final InetSocketAddress electionAddr,
                        final EventLoopGroup eventLoopGroup,
                        final QuorumBroadcast quorumBroadcast) {
-        super(mySid, eventLoopGroup);
+        super(mySid);
 
         this.electionAddr = electionAddr;
         if (!(this.group instanceof NioEventLoopGroup)) {
             throw new IllegalArgumentException("invalid event loop group");
         }
-        this.eventLoopGroup = (NioEventLoopGroup)this.group;
+        this.eventLoopGroup = eventLoopGroup;
         if (!(quorumBroadcast instanceof  com.quorum.netty.QuorumBroadcast)){
-            throw new IllegalArgumentException("invalid quorum broacast");
+            throw new IllegalArgumentException("invalid quorum broadcast");
         }
         this.quorumBroadcast = quorumBroadcast;
     }
@@ -80,7 +80,24 @@ public class VoteView extends VoteViewBase {
         super(mySid);
 
         this.electionAddr = electionAddr;;
-        this.eventLoopGroup = (NioEventLoopGroup)this.group;
+        this.eventLoopGroup = new NioEventLoopGroup(MAX_THREAD_COUNT,
+                Executors.newSingleThreadExecutor(new ThreadFactory() {
+                    @Override
+                    public Thread newThread(Runnable target) {
+                        final Thread thread = new Thread(target);
+                        LOG.debug("Creating new worker thread");
+                        thread.setUncaughtExceptionHandler(
+                                new Thread.UncaughtExceptionHandler() {
+                                    @Override
+                                    public void uncaughtException(Thread t,
+                                                                  Throwable e) {
+                                        LOG.error("Uncaught Exception", e);
+                                        System.exit(1);
+                                    }
+                                });
+                        return thread;
+                    }
+                }));
         quorumBroadcast = QuorumBroadcastFactory.createQuorumBroadcast(
                 type, mySid, servers, electionAddr, this.eventLoopGroup,
                 readTimeoutMsec, connectTimeoutMsec, keepAliveTimeoutMsec,

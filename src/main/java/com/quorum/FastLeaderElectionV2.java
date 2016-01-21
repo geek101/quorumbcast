@@ -37,7 +37,6 @@ import java.util.concurrent.ExecutionException;
 import java.util.concurrent.Future;
 import java.util.concurrent.TimeUnit;
 
-
 public class FastLeaderElectionV2 implements Election {
     private static final Logger LOGS
             = LoggerFactory.getLogger(FastLeaderElectionV2.class);
@@ -176,14 +175,19 @@ public class FastLeaderElectionV2 implements Election {
                 } else {
                     LOG.info("broke stability for null vote");
                 }
-                updateVotes(getUpdatedCollection(votes, selfVote));
+                final Collection<Vote> outVotes
+                        = getUpdatedCollection(votes, selfVote);
+                LOG.debug("outgoing vote count: " + votes.size());
+                updateVotes(outVotes);
                 return true;
             }
 
             if (LOG.isDebugEnabled()) {
                 LOG.debug("was stable for leader: " + this.electedLeaderVote);
             }
-            updateVotes(getUpdatedCollection(votes, selfVote));
+            final Collection<Vote> outVotes
+                    = getUpdatedCollection(votes, selfVote);
+            updateVotes(outVotes);
             return false;
         }
     }
@@ -233,9 +237,11 @@ public class FastLeaderElectionV2 implements Election {
         Collection<Vote> votes = Collections.singletonList(selfVote);
         while (true) {
             // Get leader vote and self vote with election epoch updated.
-            final ImmutablePair<Vote, Vote> leaderElectedAndSelfVote =
+            final ImmutableTriple<Vote, Vote, Collection<Vote>>
+                    leaderElectedAndSelfVote =
                     lookForLeaderLoop(consumer, CONSUME_WAIT_MSEC,
                             TimeUnit.MILLISECONDS, votes);
+            votes = leaderElectedAndSelfVote.getRight();
             if (leaderElectedAndSelfVote.getLeft() == null) {
                 continue;
             }
@@ -246,13 +252,11 @@ public class FastLeaderElectionV2 implements Election {
             ImmutablePair<Vote, Collection<Vote>> stabilityPair =
                     leaderStabilityCheckLoop(consumer, fuzzyStableTimeout,
                             stableTimeoutUnit,
-                            leaderElectedAndSelfVote.getLeft(),
-                            leaderElectedAndSelfVote.getRight(), votes);
+                            leaderElectedAndSelfVote.getLeft(), votes);
 
             final Vote stabilityUpdatedSelfVote = stabilityPair.getLeft();
             if (stabilityPair.getRight() == null) {
-                final Vote selfFinalVote
-                        = catchUpToLeaderBeforeExitAndUpdate(
+                final Vote selfFinalVote = catchUpToLeaderBeforeExitAndUpdate(
                         leaderElectedAndSelfVote.getLeft(),
                         stabilityUpdatedSelfVote);
                 leaveInstance(selfFinalVote);
@@ -296,23 +300,26 @@ public class FastLeaderElectionV2 implements Election {
      * @throws InterruptedException
      * @throws ExecutionException
      */
-    private ImmutablePair<Vote, Vote> lookForLeaderLoop(
+    private ImmutableTriple<Vote, Vote, Collection<Vote>> lookForLeaderLoop(
             final VoteViewChangeConsumer consumer, final int timeout,
-            final TimeUnit unit, Collection<Vote> votes)
-            throws ElectionException,
-            InterruptedException, ExecutionException {
+            final TimeUnit unit, final Collection<Vote> votes)
+            throws ElectionException, InterruptedException, ExecutionException {
+        Collection<Vote> loopVotes = votes;
         do {
             final ImmutablePair<Vote, Collection<Vote>>
                     leaderAndEpochUpdatedVotes
-                    = lookForLeaderLoopUpdateHelper(votes);
+                    = lookForLeaderLoopUpdateHelper(loopVotes);
 
-            final Vote selfVote
-                    = getSelfVoteFromSet(leaderAndEpochUpdatedVotes.getRight());
+            final Vote selfVote = getSelfVoteFromSet(
+                    leaderAndEpochUpdatedVotes.getRight());
+
+            loopVotes = getUpdatedCollection(loopVotes, selfVote);
 
             // If leader is found return the leader vote and updated self vote.
             if (leaderAndEpochUpdatedVotes.getLeft() != null) {
-                return ImmutablePair.of(
-                        leaderAndEpochUpdatedVotes.getLeft(), selfVote);
+                return ImmutableTriple.of(
+                        leaderAndEpochUpdatedVotes.getLeft(), selfVote,
+                        loopVotes);
             }
 
             // No success try again, This set of votes contain the updated
@@ -321,10 +328,9 @@ public class FastLeaderElectionV2 implements Election {
             // modification done to self Vote then the next consume call will
             // break immediately and election will be rerun with that updated
             // info. Which is what we desire.
-            votes = leaderAndEpochUpdatedVotes.getRight();
-        } while ((votes = consumer.consume(
-                timeout, unit, new DefaultPredicate(votes))) != null);
-        return ImmutablePair.of(null, null);
+        } while ((loopVotes = consumer.consume(
+                timeout, unit, new DefaultPredicate(loopVotes))) != null);
+        return ImmutableTriple.of(null, null, null);
     }
 
     /**
@@ -816,14 +822,11 @@ public class FastLeaderElectionV2 implements Election {
     private ImmutablePair<Vote, Collection<Vote>> leaderStabilityCheckLoop(
             final VoteViewChangeConsumer consumer, final int timeout,
             final TimeUnit unit, final Vote leaderElectedVote,
-            final Vote selfUpdatedVote, final Collection<Vote> lastVotes)
+            final Collection<Vote> lastVotes)
             throws ElectionException, InterruptedException, ExecutionException {
         NotNull.check(leaderElectedVote, "leader vote is null", LOG);
-        final Collection<Vote> lastVotesUpdated = getUpdatedCollection(
-                lastVotes, selfUpdatedVote);
         final LeaderStabilityPredicate predicate =
-                getLeaderStabilityPredicate(leaderElectedVote,
-                        lastVotesUpdated);
+                getLeaderStabilityPredicate(leaderElectedVote, lastVotes);
 
         // Run with consumer predicate.
         final Collection<Vote> consumerVotes
@@ -917,12 +920,10 @@ public class FastLeaderElectionV2 implements Election {
         for (final Vote vote : votes) {
             if (vote.getSid() != updateVote.getSid()) {
                 retVotes.add(vote);
-                continue;
             }
-
-            retVotes.add(updateVote);
         }
 
+        retVotes.add(updateVote);
         return Collections.unmodifiableCollection(retVotes);
     }
 

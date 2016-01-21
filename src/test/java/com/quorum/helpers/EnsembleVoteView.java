@@ -279,7 +279,7 @@ public class EnsembleVoteView extends AbstractEnsemble {
         }
 
         // In final state allocate everything required.
-        final EventLoopGroup eventLoopGroup
+        final EventLoopGroup eventLoopGroupForQBCast
                 = new NioEventLoopGroup(VoteViewWrapper.MAX_THREAD_COUNT,
                 Executors.newSingleThreadExecutor(new ThreadFactory() {
                     @Override
@@ -304,7 +304,7 @@ public class EnsembleVoteView extends AbstractEnsemble {
             // Create a quorumBcast per VoteView.
             quorumBroadcast = new QuorumBcastWithCnxMesh(sid,
                     servers, serverMap.get(sid).getElectionAddr(),
-                    eventLoopGroup, readTimeoutMsec, connectTimeoutMsec,
+                    eventLoopGroupForQBCast, readTimeoutMsec, connectTimeoutMsec,
                     keepAliveTimeoutMsec, keepAliveCount,
                     sslEnabled, quorumCnxMesh);
         } catch (ChannelException | IOException exp) {
@@ -313,8 +313,29 @@ public class EnsembleVoteView extends AbstractEnsemble {
             throw new RuntimeException(errStr);
         }
 
+        // In final state allocate everything required.
+        final EventLoopGroup eventLoopGroupForVoteView
+                = new NioEventLoopGroup(VoteViewWrapper.MAX_THREAD_COUNT,
+                Executors.newSingleThreadExecutor(new ThreadFactory() {
+                    @Override
+                    public Thread newThread(Runnable target) {
+                        final Thread thread = new Thread(target);
+                        LOG.debug("Creating new worker thread");
+                        thread.setUncaughtExceptionHandler(
+                                new Thread.UncaughtExceptionHandler() {
+                                    @Override
+                                    public void uncaughtException(Thread t,
+                                                                  Throwable e) {
+                                        LOG.error("Uncaught Exception: " + e);
+                                        System.exit(1);
+                                    }
+                                });
+                        return thread;
+                    }
+                }));
+
         final VoteViewWrapper voteViewWrapper = new VoteViewWrapper(sid,
-                serverMap.get(sid).getElectionAddr(), eventLoopGroup,
+                serverMap.get(sid).getElectionAddr(), eventLoopGroupForVoteView,
                 quorumBroadcast);
 
         quorumBcastAndVoteViewMap.put(sid,
