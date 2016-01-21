@@ -21,7 +21,6 @@ import com.quorum.flexible.QuorumVerifier;
 import com.quorum.util.LogPrefix;
 import com.quorum.util.NotNull;
 import com.quorum.util.Predicate;
-import org.apache.commons.lang3.SystemUtils;
 import org.apache.commons.lang3.tuple.ImmutablePair;
 import org.apache.commons.lang3.tuple.ImmutableTriple;
 import org.slf4j.Logger;
@@ -385,8 +384,7 @@ public class FastLeaderElectionV2 implements Election {
                 = lookingElectionEpochConverge(votes);
 
         // Now try to find a leader within the updated set.
-        return ImmutablePair.of(leaderFromView(electionReadyVotes),
-                electionReadyVotes.get(getId()));
+        return leaderFromView(electionReadyVotes);
     }
 
     /**
@@ -413,7 +411,7 @@ public class FastLeaderElectionV2 implements Election {
 
         if (LOG.isDebugEnabled()) {
             for (final Vote v : votes.values()) {
-                LOG.info("lookingElectionEpochConverge: " + v);
+                LOG.info("lookingElectionEpochConverge(): " + v);
             }
         }
 
@@ -512,19 +510,21 @@ public class FastLeaderElectionV2 implements Election {
      * above change and/or there was a change in the view.
      *
      * @param voteMap
-     * @return
+     * @return Leader if elected and our vote modified if no quorum for
+     * elected leader found.
      * @throws ElectionException
      * @throws InterruptedException
      * @throws ExecutionException
      */
-    protected Vote leaderFromView(final HashMap<Long, Vote> voteMap) {
+    protected ImmutablePair<Vote, Vote> leaderFromView(
+            final HashMap<Long, Vote> voteMap) {
         if (LOG.isDebugEnabled()) {
             for (final Vote v : voteMap.values()) {
-                LOG.info("leaderFromView: " + v);
+                LOG.info("leaderFromView(): " + v);
             }
         }
         final Collection<Vote> highestPeerEpochAndZxidGroup =
-                getHighestPeerEpochAndZxidGroup(voteMap);
+                getHighestPeerEpoch(voteMap);
 
         final Map<Long, Vote> highestPeerEpochAndZxidGroupMap = new HashMap<>();
         for (final Vote vote : highestPeerEpochAndZxidGroup) {
@@ -534,178 +534,76 @@ public class FastLeaderElectionV2 implements Election {
         final ImmutablePair<Vote, HashSet<Long>> leaderElectedCountPair =
                 getLeaderByCount(highestPeerEpochAndZxidGroupMap);
         final Vote leaderElectedVote = leaderElectedCountPair.getLeft();
-        final HashSet<Long> quorumForLeaderElected
-                = leaderElectedCountPair.getRight();
+
+        // If no available suggested leader picked then return null.
         if (leaderElectedVote == null) {
-            return null;
+            return ImmutablePair.of(null, voteMap.get(getId()));
         }
 
+        final HashSet<Long> quorumForLeaderElected
+                = leaderElectedCountPair.getRight();
         if (!quorumVerifier.containsQuorum(quorumForLeaderElected)) {
             if (LOG.isDebugEnabled()) {
                 LOG.debug("No quorum for Leader elected, Vote: "
                         + leaderElectedVote + " with count:"
                         + quorumForLeaderElected.size());
             }
-            return null;
+
+            Vote selfVote = voteMap.get(getId());
+            if (selfVote.getSid() != leaderElectedVote.getSid()) {
+                selfVote = selfVote.catchUpToVote(leaderElectedVote);
+            }
+            return ImmutablePair.of(null, selfVote);
         }
 
         if (LOG.isDebugEnabled()) {
             LOG.debug("Quorum for Leader elected, Vote: " + leaderElectedVote
                     + " with count:" + quorumForLeaderElected.size());
         }
+
         // For peace of mind!, if we picked someone else ensure
         // that that vote thinks its a leader.
         assert leaderElectedVote.getSid() == getId() ||
                 leaderElectedVote.getLeader() == leaderElectedVote.getSid();
 
-        return leaderElectedVote;
-    }
-
-    class PeerEpochAndZxid implements Comparable<PeerEpochAndZxid> {
-        private final long peerEpoch;
-        private final long zxid;
-
-        public PeerEpochAndZxid(final Vote from) {
-            this.peerEpoch = from.getPeerEpoch();
-            this.zxid = from.getZxid();
-        }
-
-        public long getZxid() {
-            return zxid;
-        }
-
-        public long getPeerEpoch() {
-            return peerEpoch;
-        }
-
-        @Override
-        public String toString() {
-            return "PeerEpoch: " + Long.toHexString(getPeerEpoch())
-                    + " zxid:" + Long.toHexString(zxid);
-        }
-
-        @Override
-        public int hashCode() {
-            final long h = getZxid() | getPeerEpoch();
-            return (int) (h >> 32 ^ (int) h);
-        }
-
-        @Override
-        public boolean equals(final Object other) {
-            return (other instanceof PeerEpochAndZxid) &&
-                    this.getPeerEpoch() ==
-                            ((PeerEpochAndZxid) other).getPeerEpoch() &&
-                    this.getZxid() == ((PeerEpochAndZxid) other).getZxid();
-        }
-
-        /**
-         * 0 of other is equal to this
-         * -1 if other is greater than this
-         * 1 if other is less than this
-         *
-         * @param o
-         * @return
-         */
-        @Override
-        public int compareTo(final PeerEpochAndZxid o) {
-            if (this.equals(o)) {
-                return 0;
-            } else if (this.less(o)) {
-                return -1;
-            } else {
-                return 1;
-            }
-        }
-
-        /**
-         * This is strictly less than other.
-         * Our PeerEpoch is strictly less or PeerEpoch is equal and our Zxid
-         * is strictly less.
-         *
-         * @param other
-         * @return
-         */
-        private boolean less(final PeerEpochAndZxid other) {
-            return this.getPeerEpoch() < other.getPeerEpoch() ||
-                    (this.getPeerEpoch() == other.getPeerEpoch() &&
-                            this.getZxid() < other.getZxid());
-        }
+        return ImmutablePair.of(leaderElectedVote, voteMap.get(getId()));
     }
 
     /**
-     * .
-     * TODO: ElectionEpoch < our ElectionEpoch is considered, read below.
-     * One point of deviation from previous version is we also consider a Vote
-     * which is in LOOKING state but its epoch is perhaps less than ours.
+     * Group the votes by highest PeerEpoch available.
      * <p>
      * Protected for test case use.
      *
      * @param voteMap given Vote view
      * @return votes grouped by the highest peer epoch and zxid.
      */
-
     protected Collection<Vote>
-    getHighestPeerEpochAndZxidGroup(final HashMap<Long, Vote> voteMap) {
+    getHighestPeerEpoch(final HashMap<Long, Vote> voteMap) {
         if (voteMap == null || voteMap.isEmpty()) {
             LOG.debug("votes are null or empty, cannot find leader");
             return null;
         }
 
         /**
-         * Count for each Vote how many Votes elect it as
-         * a leader including itself.
+         * Group by highest PeerEpoch we have in the given set.
          */
-
-        final Map<PeerEpochAndZxid, HashSet<Long>> peerEpochAndZxidCountMap
-                = new HashMap<>();
+        final Collection<Vote> votesForMaxPeerEpoch = new ArrayList<>();
+        long maxPeerEpoch = Long.MIN_VALUE;
         for (final Vote vote : voteMap.values()) {
             if (vote.getState() != QuorumPeer.ServerState.OBSERVING) {
-                // Group votes by ZXidAndPeerEpoch
-                PeerEpochAndZxid peerEpochAndZxid
-                        = new PeerEpochAndZxid(vote);
-                if (peerEpochAndZxidCountMap.containsKey(peerEpochAndZxid)) {
-                    peerEpochAndZxidCountMap.get(peerEpochAndZxid)
-                            .add(vote.getSid());
-                } else {
-                    peerEpochAndZxidCountMap.put(new PeerEpochAndZxid(vote),
-                            new HashSet<Long>(
-                                    Collections.singletonList(vote.getSid())));
+                if (maxPeerEpoch < vote.getPeerEpoch()) {
+                    // Reset for next max peer epoch.
+                    votesForMaxPeerEpoch.clear();
+                    maxPeerEpoch = vote.getPeerEpoch();
+                }
+
+                if (maxPeerEpoch == vote.getPeerEpoch()) {
+                    votesForMaxPeerEpoch.add(vote);
                 }
             }
         }
 
-        // Iterate through zxidAndPeerEpoch grouped map and get
-        // the highest entry
-        PeerEpochAndZxid highestPeerEpochAndZxid = null;
-        for (final PeerEpochAndZxid zp : peerEpochAndZxidCountMap.keySet()) {
-            if (highestPeerEpochAndZxid == null ||
-                    highestPeerEpochAndZxid.compareTo(zp) < 0) {
-                highestPeerEpochAndZxid = zp;
-            }
-        }
-
-        // Get the quorum set for the highestPeerEpochAndZxid
-        final HashSet<Long> quorumSetForHighZAndP
-                = peerEpochAndZxidCountMap.get(highestPeerEpochAndZxid);
-        // LOG if there is a majority with best PeerEpochAndZxid
-        if (LOG.isDebugEnabled()) {
-            if (!quorumVerifier.containsQuorum(quorumSetForHighZAndP)) {
-                LOG.debug("Not enough quorum for highestPeerEpochAndZxid : "
-                        + highestPeerEpochAndZxid + " size: " +
-                        quorumSetForHighZAndP.size());
-            } else {
-                LOG.debug("Quorum found for highestPeerEpochAndZxid : "
-                        + highestPeerEpochAndZxid + " size: " +
-                        quorumSetForHighZAndP.size());
-            }
-        }
-
-        final Collection<Vote> quorumVotesForHighZAndP = new ArrayList<>();
-        for (final long serverSid : quorumSetForHighZAndP) {
-            quorumVotesForHighZAndP.add(voteMap.get(serverSid));
-        }
-
-        return quorumVotesForHighZAndP;
+        return votesForMaxPeerEpoch;
     }
 
     // Group vote id and count together, helps us with sort
@@ -742,7 +640,7 @@ public class FastLeaderElectionV2 implements Election {
     }
 
     /**
-     * Step 2, 3, and 4. Refcount for each leader. Helps us pick the best set.
+     * Step 2, 3, and 4. ref-count for each leader. Helps us pick the best set.
      *
      * @param voteMap
      * @return LeaderVote and Sid of Votes that elected it as leader. null,
@@ -753,6 +651,9 @@ public class FastLeaderElectionV2 implements Election {
         final HashMap<Long, VoteCountSet> voteToCountMap = new HashMap<>();
         // Look at each vote count reference for each valid leader.
         for (final Vote vote : voteMap.values()) {
+            // Pick a leader only if it thinks its a leader or
+            // I am the one picked as leader then its ok for me to be in
+            // looking state.
             if (!checkLeader(voteMap, vote)) {
                 continue;
             }
@@ -765,14 +666,14 @@ public class FastLeaderElectionV2 implements Election {
                 voteToCountMap.put(leaderForVote.getSid(),
                         new VoteCountSet(leaderForVote));
                 voteToCountMap.get(leaderForVote.getSid()).addVote(vote);
-
             }
         }
 
         VoteCountSet bestTotalOrder = null;
         // Among the most elected leaders pick the best.
         // There could be a case with multiple leaders have the best count,
-        // in that use totalOrderPredicate() to get the best among them.
+        // in that use totalOrderPredicate() to get the best among them if
+        // both of them are in LEADING state.
         final ArrayList<VoteCountSet> voteCounts
                 = new ArrayList<>(voteToCountMap.values());
         Collections.sort(voteCounts, Collections.reverseOrder());
@@ -783,6 +684,10 @@ public class FastLeaderElectionV2 implements Election {
             }
             max = voteCountSet.getCount();
             if (bestTotalOrder == null ||
+                    (voteMap.get(voteCountSet.getSid()).getState() ==
+                            QuorumPeer.ServerState.LEADING &&
+                            voteMap.get(bestTotalOrder.getSid()).getState() !=
+                                    QuorumPeer.ServerState.LEADING) ||
                     totalOrderPredicate(voteMap.get(voteCountSet.getSid()),
                             voteMap.get(bestTotalOrder.getSid()))) {
                 bestTotalOrder = voteCountSet;
@@ -940,8 +845,6 @@ public class FastLeaderElectionV2 implements Election {
             final Vote leaderElectedVote, final Collection<Vote> lastVotes) {
         return new LeaderStabilityPredicate(leaderElectedVote, lastVotes);
     }
-
-
 
     /**
      * Check if a pair (server id, zxid) succeeds our

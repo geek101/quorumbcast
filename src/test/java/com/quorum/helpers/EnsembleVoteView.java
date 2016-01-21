@@ -60,7 +60,7 @@ public class EnsembleVoteView extends AbstractEnsemble {
     final String trustStorePassword;
     final String trustStoreCAAlias;
 
-    private final QuorumCnxMesh quorumCnxMesh;
+
     private final Map<Long, QuorumServer> serverMap;
 
     private MockQuorumBcast mockQuorumBcast;
@@ -103,7 +103,6 @@ public class EnsembleVoteView extends AbstractEnsemble {
         this.trustStorePassword = trustStorePassword;
         this.trustStoreCAAlias = trustStoreCAAlias;
 
-        this.quorumCnxMesh = new QuorumCnxMeshBase(quorumSize);
         this.serverMap = new HashMap<>();
         for (final QuorumServer quorumServer : servers) {
             if (serverMap.containsKey(quorumServer.id())) {
@@ -113,7 +112,8 @@ public class EnsembleVoteView extends AbstractEnsemble {
             serverMap.put(quorumServer.id(), quorumServer);
         }
 
-        mockQuorumBcast = new MockQuorumBcast(getId(), getQuorumSize());
+        mockQuorumBcast = new MockQuorumBcast(getId(), getQuorumSize(),
+                parent == null ? null : parent.getQuorumCnxMesh());
     }
 
     public EnsembleVoteView(final long id, final int quorumSize,
@@ -168,6 +168,8 @@ public class EnsembleVoteView extends AbstractEnsemble {
                 ((EnsembleVoteView)parentEnsemble).trustStorePassword,
                 ((EnsembleVoteView)parentEnsemble).trustStoreCAAlias);
         this.fles = ((AbstractEnsemble)parentEnsemble).fles;
+        this.partitionedQuorum = ((AbstractEnsemble) parentEnsemble)
+                .partitionedQuorum;
         this.LOG = new LogPrefix(LOGS, toString());
     }
 
@@ -214,29 +216,9 @@ public class EnsembleVoteView extends AbstractEnsemble {
     }
 
     @Override
-    public FLEV2Wrapper disconnect(final long serverSid)
-            throws ElectionException {
-        if (!fles.containsKey(serverSid)) {
-            throw new ElectionException("no server for sid: " + serverSid);
-        }
-
-        quorumCnxMesh.disconnectAll(serverSid);
-        return fles.get(serverSid);
-    }
-
-    @Override
-    public FLEV2Wrapper connect(final long serverSid) throws ElectionException {
-        if (!fles.containsKey(serverSid)) {
-            throw new ElectionException("no server for sid: " + serverSid);
-        }
-
-        quorumCnxMesh.connectAll(serverSid);
-        return fles.get(serverSid);
-    }
-
-    @Override
     public boolean isConnected(final long serverSid) {
-        return quorumCnxMesh.isConnectedToAny(serverSid);
+        return quorumCnxMesh != null && quorumCnxMesh.isConnectedToAny
+                (serverSid);
     }
 
     @Override
@@ -330,9 +312,6 @@ public class EnsembleVoteView extends AbstractEnsemble {
             LOG.error(errStr);
             throw new RuntimeException(errStr);
         }
-
-        // Lets set the new FLE to be connected to everyone.
-        quorumCnxMesh.connectAll(sid);
 
         final VoteViewWrapper voteViewWrapper = new VoteViewWrapper(sid,
                 serverMap.get(sid).getElectionAddr(), eventLoopGroup,

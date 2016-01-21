@@ -20,6 +20,7 @@ package com.quorum;
 import com.quorum.helpers.Ensemble;
 import com.quorum.helpers.EnsembleFactory;
 import com.quorum.helpers.PortAssignment;
+import com.quorum.helpers.EnsembleHelpers;
 import com.quorum.netty.BaseTest;
 import org.apache.commons.lang3.tuple.ImmutablePair;
 import org.apache.commons.lang3.tuple.ImmutableTriple;
@@ -52,7 +53,7 @@ public class FLEV2CombValidLeaderElectTest extends BaseTest {
     private final List<QuorumServer> quorumServerList = new ArrayList<>();
     private final Long readTimeoutMsec = 300L;
     private final Long connectTimeoutMsec = 500L;
-    private final Long keepAliveTimeoutMsec = 100L;
+    private final Long keepAliveTimeoutMsec = 250L;
     private final Integer keepAliveCount = 3;
 
     @Parameterized.Parameters
@@ -65,7 +66,7 @@ public class FLEV2CombValidLeaderElectTest extends BaseTest {
                 { "mockbcast", 3, 50, TimeUnit.MILLISECONDS},
                 { "mockbcast", 5, 50, TimeUnit.MILLISECONDS},
                 { "quorumbcast", 3, 350, TimeUnit.MILLISECONDS},
-                { "quorumbcast-ssl", 3, 350, TimeUnit.MILLISECONDS}
+                { "quorumbcast-ssl", 3, 550, TimeUnit.MILLISECONDS}
         });
     }
 
@@ -135,7 +136,7 @@ public class FLEV2CombValidLeaderElectTest extends BaseTest {
             for (final Collection<
                     ImmutablePair<Long, QuorumPeer.ServerState>> q : c) {
                 final Ensemble configuredParent = ensemble.configure(q);
-                LOG.info("config for: " + Ensemble
+                LOG.info("config for: " + EnsembleHelpers
                         .getQuorumServerStateCollectionStr(q)
                         + " result: " + configuredParent);
                 final Collection<Ensemble> movedEnsembles = configuredParent
@@ -158,7 +159,7 @@ public class FLEV2CombValidLeaderElectTest extends BaseTest {
         final Ensemble moved = t.getMiddle();
         final Ensemble done = t.getRight();
         LOG.warn("verify " + configured + "->" + moved + " : election[" +
-                Ensemble.getSidWithServerStateStr(
+                EnsembleHelpers.getSidWithServerStateStr(
                         ImmutablePair.of(
                                 moved.getFleToRun().getId(),
                                 moved.getFleToRun().getState()))
@@ -167,7 +168,7 @@ public class FLEV2CombValidLeaderElectTest extends BaseTest {
         done.verifyLeaderAfterShutDown();
 
         LOG.warn("verified " + configured + "->" + moved + " : election[" +
-                Ensemble.getSidWithServerStateStr(
+                EnsembleHelpers.getSidWithServerStateStr(
                         ImmutablePair.of(
                                 moved.getFleToRun().getId(),
                                 moved.getFleToRun().getState()))

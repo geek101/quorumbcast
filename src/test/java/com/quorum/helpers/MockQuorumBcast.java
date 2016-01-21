@@ -27,11 +27,26 @@ import java.util.concurrent.ExecutionException;
 public class MockQuorumBcast extends MockQuorumBcastTestBase {
     private static final Logger LOG
             = LoggerFactory.getLogger(MockQuorumBcast.class);
+    private QuorumCnxMesh quorumCnxMesh;
     final Map<Long, VoteViewChange> voteViewMap;
 
-    public MockQuorumBcast(final long id, final int quorumSize) {
+    public MockQuorumBcast(final long id, final int quorumSize,
+                           final QuorumCnxMesh quorumCnxMesh) {
         super(id, quorumSize);
+        this.quorumCnxMesh = quorumCnxMesh;
         this.voteViewMap = new HashMap<>();
+    }
+
+    public void resetQuorumCnxMesh(final QuorumCnxMesh quorumCnxMesh) {
+        this.quorumCnxMesh = quorumCnxMesh;
+    }
+
+    public boolean connected(final long sid1, final long sid2) {
+        return this.quorumCnxMesh.connected(sid1, sid2);
+    }
+
+    public boolean isConnectedToAny(final long sid) {
+        return this.quorumCnxMesh.isConnectedToAny(sid);
     }
 
     @Override
@@ -52,9 +67,10 @@ public class MockQuorumBcast extends MockQuorumBcastTestBase {
             voteViewMap.put(voteView.getId(), voteView);
 
             for (final long sid : voteViewMap.keySet()) {
-                connect(voteView.getId(), sid);
                 // rx other peer votes.
                 if (sid != voteView.getId() &&
+                        quorumCnxMesh != null &&
+                        quorumCnxMesh.connected(voteView.getId(), sid) &&
                         voteViewMap.get(sid) != null) {
                     voteView.msgRx(voteViewMap.get(sid).getSelfVote());
                 }
@@ -67,32 +83,6 @@ public class MockQuorumBcast extends MockQuorumBcastTestBase {
         }
     }
 
-
-    @Override
-    public void disconnect(final long sid1, final long sid2) {
-        synchronized (this) {
-            super.disconnect(sid1, sid2);
-            unSetHelper(sid1, sid2, false);
-        }
-    }
-
-    private void unSetHelper(final long sid1, final long sid2,
-                             final boolean pred) {
-        synchronized (this) {
-            if (!pred) {
-                try {
-                    voteViewMap.get(sid1)
-                            .msgRx(Vote.createRemoveVote(sid2)).get();
-                    voteViewMap.get(sid2)
-                            .msgRx(Vote.createRemoveVote(sid1)).get();
-                } catch (InterruptedException | ExecutionException exp) {
-                    LOG.error("failed to update vote, unhandled exp: " + exp);
-                    throw new RuntimeException(exp);
-                }
-            }
-        }
-    }
-
     /**
      * called with lock held.
      * @param vote
@@ -100,7 +90,8 @@ public class MockQuorumBcast extends MockQuorumBcastTestBase {
     private void broadcast_(final Vote vote) {
         for (final Map.Entry<Long, VoteViewChange> e : voteViewMap.entrySet()) {
             if (e.getKey() != vote.getSid() &&
-                    connected(vote.getSid(), e.getKey())) {
+                    quorumCnxMesh != null &&
+                    quorumCnxMesh.connected(vote.getSid(), e.getKey())) {
                 try {
                     e.getValue().msgRx(vote).get();
                 } catch (InterruptedException | ExecutionException exp) {

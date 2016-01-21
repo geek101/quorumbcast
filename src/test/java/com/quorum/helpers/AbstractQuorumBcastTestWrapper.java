@@ -28,24 +28,19 @@ import java.io.IOException;
 import java.security.NoSuchAlgorithmException;
 import java.security.cert.CertificateException;
 
-public abstract class AbstractQuorumBcastTestWrapper extends QuorumCnxMeshBase
+public abstract class AbstractQuorumBcastTestWrapper
         implements QuorumBroadcast {
     private static final Logger LOG
             = LoggerFactory.getLogger(AbstractQuorumBcastTestWrapper.class);
     final long id;  // id equal to ensemble id
 
     public AbstractQuorumBcastTestWrapper(final long id, final int quorumSize) {
-        super(quorumSize);
         this.id = id;
     }
 
     @Override
     public long sid() {
         return this.id;
-    }
-
-    public int getQuorumSize() {
-        return size();
     }
 
     public abstract void addServer(QuorumServer server) throws

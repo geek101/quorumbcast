@@ -279,7 +279,7 @@ public abstract class NettyChannel<T> extends NettyChannelBase {
         // Create the keepAliveTask it wont be running though.
         if (keepAliveTimeoutNanos != null && keepAliveCount != null
                 && keepAliveTask == null) {
-            LOG.info("keep alive task created");
+            LOG.debug("keep alive task created");
             keepAliveTask = new KeepAliveTask(ctx, keepAliveTimeoutNanos,
                     new KeepAliveTimeoutCb(), keepAliveCount);
             resetKeepAliveTimer();

@@ -24,14 +24,7 @@ import org.apache.commons.lang3.tuple.ImmutablePair;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import java.util.ArrayList;
-import java.util.Collection;
-import java.util.Collections;
-import java.util.Comparator;
-import java.util.HashMap;
-import java.util.HashSet;
-import java.util.Map;
-import java.util.Random;
+import java.util.*;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ExecutionException;
@@ -54,6 +47,13 @@ public abstract class AbstractEnsemble implements Ensemble {
 
     private final Integer quorumSize;     /// Size of the ensemble.
     private final QuorumVerifier quorumVerifier;     /// Done with size.
+
+    protected QuorumCnxMesh quorumCnxMesh;  /// Connectivity mesh based on
+                                           // configure string
+    protected Collection<Collection<ImmutablePair<Long, QuorumPeer
+                                                   .ServerState>>>
+                                                   partitionedQuorum
+                                                   = new ArrayList<>();
     /**
      * Current Fles with Vote set for each.
      */
@@ -129,6 +129,9 @@ public abstract class AbstractEnsemble implements Ensemble {
                 ((AbstractEnsemble)parentEnsemble).getState(),
                 parentEnsemble, stableTimeout, stableTimeoutUnit);
         this.fles = ((AbstractEnsemble)parentEnsemble).fles;
+        this.quorumCnxMesh = parentEnsemble.getQuorumCnxMesh();
+        this.partitionedQuorum = ((AbstractEnsemble) parentEnsemble)
+                .partitionedQuorum;
         this.LOG = new LogPrefix(LOGS, toString());
     }
 
@@ -154,23 +157,45 @@ public abstract class AbstractEnsemble implements Ensemble {
     }
 
     @Override
-    public String toString() {
-        final ArrayList<FLEV2Wrapper> f  = new ArrayList<>(fles.values());
-        Collections.sort(f, new Comparator<FLEV2Wrapper>() {
-            @Override
-            public int compare(FLEV2Wrapper o1, FLEV2Wrapper o2) {
-                return Long.compare(o1.getId(), o2.getId());
-            }
-        });
+    public QuorumCnxMesh getQuorumCnxMesh() {
+        return this.quorumCnxMesh;
+    }
 
-        final Collection<ImmutablePair<Long, QuorumPeer.ServerState>> res =
-                new ArrayList<>();
-        for (final FLEV2Wrapper t : f) {
-            res.add(ImmutablePair.of(t.getId(), t.getState()));
+    @Override
+    public String toString() {
+        if (partitionedQuorum.size() == 0) {
+            return "myId:" + getId() + "-" +"{"
+                    + quorumSize.toString() + "}";
         }
 
-        return "myId:" + getId() +"-" + Ensemble
-                .getQuorumServerStateCollectionStr(res);
+        final List<String> stringList = new ArrayList<>();
+        for (final Collection<ImmutablePair<Long, QuorumPeer.ServerState>> t
+                : partitionedQuorum) {
+            final TreeMap<Long, Long> sidMap = new TreeMap<>();
+            for (ImmutablePair<Long, QuorumPeer.ServerState> e : t) {
+                sidMap.put(e.getLeft(), e.getLeft());
+            }
+
+            final Collection<ImmutablePair<Long, QuorumPeer.ServerState>> res =
+                    new ArrayList<>();
+            for (final long sid : sidMap.keySet()) {
+                res.add(ImmutablePair.of(sid, fles.get(sid).getState()));
+            }
+            stringList.add(
+                    EnsembleHelpers.getQuorumServerStateCollectionStr(res));
+        }
+
+        if (stringList.size() == 1) {
+            return "myId:" + getId() + "-" + stringList.get(0);
+        }
+
+        String partitionStr = "{" + stringList.get(0);
+        for (int i = 1; i < stringList.size(); i++) {
+            partitionStr += ", " + stringList.get(i);
+        }
+        partitionStr += "}";
+
+        return "myId:" + getId() + "-" + partitionStr;
     }
 
     /**
@@ -331,32 +356,97 @@ public abstract class AbstractEnsemble implements Ensemble {
         return CompletableFuture.completedFuture(null);
     }
 
+    public ImmutablePair<Long, QuorumPeer.ServerState>
+    parseHostStateString(final String nodeStr,
+                         final HashMap<Long,
+                                 ImmutablePair<Long,
+                                         QuorumPeer.ServerState>> result) {
+        if (nodeStr.length() < 2) {
+            return ImmutablePair.of(Long.MIN_VALUE, null);
+        }
+        final char nodeState = nodeStr.charAt(nodeStr.length()-1);
+        final QuorumPeer.ServerState serverState
+                = EnsembleHelpers.getServerState(nodeState);
+        final long nodeId = Long.valueOf(
+                nodeStr.substring(0, nodeStr.length()-1));
+        result.put(nodeId, ImmutablePair.of(nodeId, serverState));
+        return ImmutablePair.of(nodeId, serverState);
+    }
+
+    public int configureParser(final String quorumStr, int idx,
+                               final HashSet<Long> sidMap,
+                               final HashMap<Long,
+                                       ImmutablePair<Long,
+                                               QuorumPeer.ServerState>>
+                                       flatResult,
+                               final Collection<
+                                       Collection<ImmutablePair<Long,
+                                               QuorumPeer.ServerState>>>
+                                       partitionResult) {
+        if (idx == quorumStr.length()) return idx;
+
+        Collection<ImmutablePair<Long,
+                QuorumPeer.ServerState>> currentPartitionResult
+                = new ArrayList<>();
+        String nodeStr = "";
+        for (int i = idx; i < quorumStr.length(); i++) {
+            if (quorumStr.charAt(idx) == '{') {
+                i = configureParser(quorumStr, i+1, new HashSet<>(),
+                        flatResult, partitionResult);
+            } else if (quorumStr.charAt(i) == '}') {
+                final ImmutablePair<Long, QuorumPeer.ServerState> pair
+                        = parseHostStateString(nodeStr, flatResult);
+                if (pair.getLeft() != Long.MIN_VALUE) {
+                    currentPartitionResult.add(pair);
+                    sidMap.add(pair.getLeft());
+                }
+
+                for (final long sidSrc : sidMap) {
+                    for (final long sidDst : sidMap) {
+                        quorumCnxMesh.connect(sidSrc, sidDst);
+                    }
+                }
+                partitionResult.add(currentPartitionResult);
+                return i + 1;
+            } else if (quorumStr.charAt(i) == ',') {
+                final ImmutablePair<Long, QuorumPeer.ServerState> pair  =
+                        parseHostStateString(nodeStr, flatResult);
+                if (pair.getLeft() != Long.MIN_VALUE) {
+                    currentPartitionResult.add(pair);
+                    sidMap.add(pair.getLeft());
+                }
+
+                nodeStr = "";
+                continue;
+            } else if (quorumStr.charAt(i) == ' ') {
+                continue;
+            }
+
+            if (i < quorumStr.length()) {
+                nodeStr += quorumStr.charAt(i);
+            }
+        }
+
+        return quorumStr.length();
+    }
+
     /**
-     * example input: {1K, 2F, 3L}
+     * example input: {{1K, 2F}, {2F, 3L}}
+     * The above example signifies network partition. When there is no
+     * partition it would look like this {1L, 2F, 3L}
      * @param quorumStr
      * @return
      */
-    public Ensemble configure(final String quorumStr)
-            throws ElectionException, ExecutionException, InterruptedException {
-        final Collection<ImmutablePair<Long, QuorumPeer.ServerState>>
-                q = new ArrayList<>();
-        String noBraces = quorumStr.replace('}', ' ').replace('{', ' ').trim();
-        final String[] nodeStrs = noBraces.split(",");
-        for (int i = 0; i < nodeStrs.length; i++) {
-            String nodeStr = nodeStrs[i].trim().toUpperCase();
-            if (nodeStr.length() < 2) {
-                throw new IllegalArgumentException("invalid arg: "
-                        + quorumStr);
-            }
+    public Ensemble configure(final String quorumStr) throws ElectionException,
+            ExecutionException, InterruptedException {
+        quorumCnxMesh = new QuorumCnxMeshBase(quorumSize);
+        final HashMap<Long, ImmutablePair<Long, QuorumPeer.ServerState>>
+                flatQuorum = new HashMap<>();
 
-            final char nodeState = nodeStr.charAt(nodeStr.length()-1);
-            final QuorumPeer.ServerState serverState
-                    = Ensemble.getServerState(nodeState);
-            final long nodeId = Long.valueOf(
-                    nodeStr.substring(0, nodeStr.length()-1));
-            q.add(ImmutablePair.of(nodeId, serverState));
-        }
-        return configure(q);
+        configureParser(quorumStr, 0, null, flatQuorum, partitionedQuorum);
+
+        // de-dup flatQuorum
+        return configure(flatQuorum.values());
     }
 
     /**
@@ -447,8 +537,7 @@ public abstract class AbstractEnsemble implements Ensemble {
                     + fleToRun.getId());
         }
 
-        final AbstractEnsemble childEnsemble
-                = createEnsembleFromParent(this);
+        final AbstractEnsemble childEnsemble = createEnsembleFromParent(this);
         childEnsemble.verifyLookingVotes();
         childEnsemble.runLookingForSid(this.fleToRun.getId());
         return childEnsemble;
@@ -678,7 +767,7 @@ public abstract class AbstractEnsemble implements Ensemble {
     public Collection<Collection<Collection<
             ImmutablePair<Long, QuorumPeer.ServerState>>>>
     quorumMajorityWithLeaderServerStateCombinations() {
-        return Ensemble.quorumMajorityWithLeaderServerStateCombinations(
+        return EnsembleHelpers.quorumMajorityWithLeaderServerStateCombinations(
                 this.quorumSize);
     }
 

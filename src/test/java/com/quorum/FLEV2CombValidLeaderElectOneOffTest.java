@@ -21,6 +21,7 @@ package com.quorum;
 import com.quorum.helpers.Ensemble;
 import com.quorum.helpers.EnsembleFactory;
 import com.quorum.helpers.PortAssignment;
+import com.quorum.helpers.EnsembleHelpers;
 import com.quorum.netty.BaseTest;
 import org.apache.commons.lang3.tuple.ImmutablePair;
 import org.junit.Test;
@@ -74,7 +75,7 @@ public class FLEV2CombValidLeaderElectOneOffTest extends BaseTest {
             throws ElectionException, InterruptedException, ExecutionException {
         final Ensemble ensemble = createEnsemble(1L, 5);
         final Ensemble parentEnsemble
-                = ensemble.configure("{1F,2F,3F,4F, 5L}");
+                = ensemble.configure("{1F,2F,3F,4F,5L}");
         final Ensemble movedEnsemble
                 = parentEnsemble.moveToLooking(5);
         final Ensemble doneEnsemble
@@ -83,7 +84,7 @@ public class FLEV2CombValidLeaderElectOneOffTest extends BaseTest {
         doneEnsemble.verifyLeaderAfterShutDown();
         LOG.warn("verified " + parentEnsemble + "->" + movedEnsemble
                 + " : election[" +
-                Ensemble.getSidWithServerStateStr(
+                EnsembleHelpers.getSidWithServerStateStr(
                         ImmutablePair.of(
                                 movedEnsemble.getFleToRun().getId(),
                                 movedEnsemble.getFleToRun().getState()))
@@ -106,7 +107,30 @@ public class FLEV2CombValidLeaderElectOneOffTest extends BaseTest {
         doneEnsemble.verifyLeaderAfterShutDown();
         LOG.warn("verified " + parentEnsemble + "->" + movedEnsemble
                 + " : election[" +
-                Ensemble.getSidWithServerStateStr(
+                EnsembleHelpers.getSidWithServerStateStr(
+                        ImmutablePair.of(
+                                movedEnsemble.getFleToRun().getId(),
+                                movedEnsemble.getFleToRun().getState()))
+                + "] -> " + doneEnsemble + ", leader: "
+                + doneEnsemble.getLeaderLoopResult().values()
+                .iterator().next().getLeader());
+    }
+
+    @Test
+    public void testPartitionEnsemble() throws ElectionException,
+            InterruptedException, ExecutionException {
+        final Ensemble ensemble = createEnsemble(1L, 5);
+        final Ensemble parentEnsemble
+                = ensemble.configure("{{1k, 2K, 5L}, {3F, 4F, 5L}}");
+        final Ensemble movedEnsemble
+                = parentEnsemble.moveToLooking(3);
+        final Ensemble doneEnsemble
+                = movedEnsemble.runLooking();
+
+        doneEnsemble.verifyLeaderAfterShutDown();
+        LOG.warn("verified " + parentEnsemble + "->" + movedEnsemble
+                + " : election[" +
+                EnsembleHelpers.getSidWithServerStateStr(
                         ImmutablePair.of(
                                 movedEnsemble.getFleToRun().getId(),
                                 movedEnsemble.getFleToRun().getState()))

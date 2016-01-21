@@ -39,7 +39,8 @@ public class EnsembleMockBcast extends AbstractEnsemble {
                              final TimeUnit stableTimeoutUnit)
             throws ElectionException {
         super(id, quorumSize, stableTimeout, stableTimeoutUnit);
-        mockQuorumBcast = new MockQuorumBcast(getId(), quorumSize);
+        mockQuorumBcast = new MockQuorumBcast(getId(), quorumSize,
+                getQuorumCnxMesh());
     }
 
     public EnsembleMockBcast(final Ensemble parentEnsemble,
@@ -48,7 +49,8 @@ public class EnsembleMockBcast extends AbstractEnsemble {
             throws ElectionException {
         super(parentEnsemble, stableTimeout, stableTimeoutUnit);
         mockQuorumBcast = new MockQuorumBcast(getId(),
-                parentEnsemble.getQuorumSize());
+                parentEnsemble.getQuorumSize(),
+                parentEnsemble.getQuorumCnxMesh());
     }
 
     @Override
@@ -84,25 +86,6 @@ public class EnsembleMockBcast extends AbstractEnsemble {
         return fleThatRan;
     }
 
-    public FLEV2Wrapper disconnect(final long serverSid)
-            throws ElectionException {
-        if (!fles.containsKey(serverSid)) {
-            throw new ElectionException("no server for sid: " + serverSid);
-        }
-
-        mockQuorumBcast.disconnectAll(serverSid);
-        return fles.get(serverSid);
-    }
-
-    public FLEV2Wrapper connect(final long serverSid) throws ElectionException {
-        if (!fles.containsKey(serverSid)) {
-            throw new ElectionException("no server for sid: " + serverSid);
-        }
-
-        mockQuorumBcast.connectAll(serverSid);
-        return fles.get(serverSid);
-    }
-
     public boolean isConnected(final long serverSid) {
         return mockQuorumBcast.isConnectedToAny(serverSid);
     }
@@ -111,21 +94,21 @@ public class EnsembleMockBcast extends AbstractEnsemble {
     protected FLEV2Wrapper createFLEV2(
             final long sid, final QuorumVerifier quorumVerifier) {
         if (mockQuorumBcast == null) {
-            mockQuorumBcast = new MockQuorumBcast(getId(), getQuorumSize());
+            mockQuorumBcast = new MockQuorumBcast(getId(), getQuorumSize(),
+                    getQuorumCnxMesh());
         }
         return createFLEV2BcastWrapper(sid, quorumVerifier);
     }
 
-
     @Override
-    protected FLEV2Wrapper copyFLEV2(final FLEV2Wrapper fle,
-                                     final Vote vote)
+    protected FLEV2Wrapper copyFLEV2(final FLEV2Wrapper fle, final Vote vote)
             throws InterruptedException, ExecutionException {
         if (!(fle instanceof FLEV2BcastWrapper)) {
             throw new IllegalArgumentException("fle is not of MockBcast " +
                     "type");
         }
         assert vote != null;
+        mockQuorumBcast.resetQuorumCnxMesh(getQuorumCnxMesh());
         FLEV2BcastWrapper flev2BcastWrapper = createFLEV2BcastWrapper(fle
                 .getId(), ((FLEV2BcastWrapper) fle).getQuorumVerifier());
         flev2BcastWrapper.updateSelfVote(vote).get();
