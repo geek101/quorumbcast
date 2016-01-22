@@ -542,7 +542,7 @@ public abstract class VoteViewBase extends VoteViewChange
         return VoteView.canChangeView(this.voteMap, vote);
     }
 
-    protected static boolean canChangeView(final Map<Long, Vote> voteMap,
+    public static boolean canChangeView(final Map<Long, Vote> voteMap,
                                          final Vote vote) {
         final Vote currentVote = voteMap.get(vote.getSid());
         if (currentVote == null || currentVote.isRemove()) {
@@ -559,6 +559,30 @@ public abstract class VoteViewBase extends VoteViewChange
                 return true;
             }
         }
+    }
+
+    public static boolean canAnyChangeView(final Map<Long, Vote> voteMap,
+                                           final Collection<Vote> votes) {
+        if (voteMap.size() != votes.size()) {
+            if (LOG.isDebugEnabled()) {
+                LOG.debug("predicate failed for size mismatch , expected: "
+                        + voteMap.size() + " got: " + votes.size());
+            }
+            return true;
+        }
+
+        for (final Vote v : votes) {
+            if (VoteView.canChangeView(voteMap, v)) {
+                if (LOG.isDebugEnabled() &&
+                        voteMap.containsKey(v.getSid())) {
+                    LOG.debug("predicate failed for : " + v
+                            + " expected: " + voteMap.get(v.getSid()));
+                }
+                return true;
+            }
+        }
+
+        return false;
     }
 
     protected void submitTask(FutureTask task) {

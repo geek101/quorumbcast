@@ -1,6 +1,7 @@
 package com.quorum.helpers;
 
 import com.quorum.ElectionException;
+import com.quorum.FastLeaderElectionV2Round;
 import com.quorum.QuorumPeer;
 import com.quorum.Vote;
 import com.quorum.VoteViewChange;
@@ -42,18 +43,22 @@ public class MockFLEV2Wrapper extends AbstractFLEV2Wrapper {
      * @throws InterruptedException
      * @throws ExecutionException
      */
-    @Override
     public ImmutablePair<Vote, Collection<Vote>> lookForLeaderLoopUpdateHelper(
             final Collection<Vote> votes)
             throws ElectionException, InterruptedException, ExecutionException {
-        final ImmutablePair<Vote, Collection<Vote>> pair
-                = super.lookForLeaderLoopUpdateHelper(votes);
+        final FastLeaderElectionV2Round flev2Round =
+                new FastLeaderElectionV2Round(getId(),
+                        getQuorumVerifier(), votes, LOG);
+        flev2Round.lookForLeader();
+
         // Update our vote if leader is non null
-        if (pair.getLeft() != null) {
-            updateSelfVote(catchUpToLeaderBeforeExitAndUpdate(pair.getLeft(),
+        if (flev2Round.getLeaderVote() != null) {
+            updateSelfVote(catchUpToLeaderBeforeExitAndUpdate(
+                    flev2Round.getLeaderVote(),
                     getSelfVote())).get();
         }
-        return ImmutablePair.of(pair.getLeft(), pair.getRight());
+        return ImmutablePair.of(flev2Round.getLeaderVote(), flev2Round
+                .getVoteMap().values());
     }
 
     @Override
