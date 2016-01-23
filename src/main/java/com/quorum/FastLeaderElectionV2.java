@@ -94,10 +94,6 @@ public class FastLeaderElectionV2 implements Election {
                 lastVotesMap.put(v.getSid(), v);
             }
         }
-
-        protected Map<Long, Vote> getVoteMap() {
-            return lastVotesMap;
-        }
     }
 
     /**
@@ -140,9 +136,14 @@ public class FastLeaderElectionV2 implements Election {
             nextFleV2Round.lookForLeader();
 
             if (nextFleV2Round.getLeaderVote() == null ||
-                    // TODO: not break on leader changing ElectionEpoch?
-                    !nextFleV2Round.getLeaderVote().match(
-                            this.fleV2Round.getLeaderVote())) {
+                    // Do not break for election epoch change
+                    !nextFleV2Round.getLeaderVote().matchForLeaderStability(
+                            this.fleV2Round.getLeaderVote()) ||
+                    // Do not break for LOOKING becoming LEADING
+                    (fleV2Round.getLeaderVote().getState()
+                            == QuorumPeer.ServerState.LEADING &&
+                    nextFleV2Round.getLeaderVote().getState()
+                            != QuorumPeer.ServerState.LEADING)) {
                 if (nextFleV2Round.getLeaderVote() != null) {
                     LOG.info("broke stability for: "
                             + nextFleV2Round.getLeaderVote());
@@ -220,6 +221,11 @@ public class FastLeaderElectionV2 implements Election {
                             getQuorumVerifier(), votes, LOG);
             flev2Round.lookForLeader();
 
+            // Lets update our election epoch if it did get borrowed from
+            // someone else, speeds up things since we are going into
+            // stability check phase.
+            updateSelfVote(flev2Round.getSelfVote());
+
             if (flev2Round.foundLeaderWithQuorum()) {
                 // If there is quorum for a leader then try stability check
                 final LeaderStabilityPredicate leaderStabilityPredicate
@@ -254,7 +260,7 @@ public class FastLeaderElectionV2 implements Election {
             votes = flev2Round.getVoteMap().values();
             LOG.resetPrefix("mySid:" + getId() + "-electionEpoch:"
                     + v.getElectionEpoch());
-            LOG.debug("leader stability failed, trying again");
+            LOG.debug("No elected leader, trying again");
         }
     }
 
@@ -275,7 +281,10 @@ public class FastLeaderElectionV2 implements Election {
             return selfVote;
         }
 
-        updateSelfVote(selfVote);
+        // If here then there is no suggested leader, we have to reset
+        // to electing ourselves as leader, we cannot point to invalid
+        // peer as leader.
+        updateSelfVote(selfVote.setSelfAsLeader());
         return selfVote;
     }
 
@@ -299,21 +308,16 @@ public class FastLeaderElectionV2 implements Election {
         }
 
         // For peace of mind!, if we picked someone else ensure
-        // that that vote thinks its a leader.
-        assert suggestedLeader.getSid() == getId() || (
-                suggestedLeader.getLeader() == suggestedLeader.getSid() &&
-                        suggestedLeader.getState()
-                                == QuorumPeer.ServerState.LEADING);
+        // then that vote thinks its a leader.
+        assert suggestedLeader.electedSelfAsLeader();
 
         final int fuzzyStableTimeout = stableTimeout
                 + random.nextInt(stableTimeout / 2);
 
         // Run with consumer predicate.
-        final Collection<Vote> consumerVotes = consumer.consume(
+        return consumer.consume(
                 fuzzyStableTimeout, stableTimeoutUnit,
                 leaderStabilityPredicate);
-
-        return consumerVotes;
     }
 
     protected Vote catchUpToLeaderBeforeExitAndUpdate(final Vote leaderVote,

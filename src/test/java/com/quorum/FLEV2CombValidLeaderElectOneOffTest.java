@@ -75,7 +75,7 @@ public class FLEV2CombValidLeaderElectOneOffTest extends BaseTest {
             throws ElectionException, InterruptedException, ExecutionException {
         final Ensemble ensemble = createEnsemble(1L, 5);
         final Ensemble parentEnsemble
-                = ensemble.configure("{1F,2F,3F,4F,5L}");
+                = ensemble.configure("{1F,2L,3K,4K,5F}");
         final Ensemble movedEnsemble
                 = parentEnsemble.moveToLooking(5);
         final Ensemble doneEnsemble

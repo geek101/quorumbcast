@@ -446,7 +446,7 @@ public abstract class AbstractEnsemble implements Ensemble {
         configureParser(quorumStr, 0, null, flatQuorum, partitionedQuorum);
 
         // de-dup flatQuorum
-        return configure(flatQuorum.values());
+        return configureAfterMesh(flatQuorum.values());
     }
 
     /**
@@ -457,6 +457,21 @@ public abstract class AbstractEnsemble implements Ensemble {
      * @throws InterruptedException
      */
     public Ensemble configure(final Collection<
+            ImmutablePair<Long, QuorumPeer.ServerState>> quorumWithState)
+            throws ElectionException, ExecutionException, InterruptedException {
+        quorumCnxMesh = new QuorumCnxMeshBase(quorumSize);
+        for (final ImmutablePair<Long, QuorumPeer.ServerState> p
+                : quorumWithState) {
+            for (final ImmutablePair<Long, QuorumPeer.ServerState> q
+                    : quorumWithState) {
+                quorumCnxMesh.connect(p.getLeft(), q.getLeft());
+            }
+        }
+
+        return configureAfterMesh(quorumWithState);
+    }
+
+    public Ensemble configureAfterMesh(final Collection<
             ImmutablePair<Long, QuorumPeer.ServerState>> quorumWithState)
             throws ElectionException, ExecutionException, InterruptedException {
         if (getState() != EnsembleState.INITIAL) {

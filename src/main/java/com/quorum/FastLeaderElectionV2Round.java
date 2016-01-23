@@ -107,13 +107,10 @@ public class FastLeaderElectionV2Round {
 
     /**
      * Go over the votes in LOOKING state and if there exists a better
-     * ElectionEpoch among the votes then use it and also we ignore election
-     * epoch and borrow the best total order predicate since that is going to
-     * happen anyway even if election epoch is behind the best.
-     *
+     * ElectionEpoch among the votes then use it.
      * @param voteMapArg set of votes from vote view in the current round.
      * @return Self vote updated if necessary. Will borrow the best election
-     * epoch and the best total order predicate
+     * epoch.
      */
     protected Vote electionEpochRound(
             final HashMap<Long, Vote> voteMapArg) {
@@ -133,7 +130,7 @@ public class FastLeaderElectionV2Round {
         Vote bestEpochVote = voteMapArg.get(getId());
         Vote bestTotalOrderPredVote = voteMapArg.get(getId());
 
-        // Look for highest election epoch.
+        // Look for highest election epoch among the looking votes.
         for (final Vote vote : voteMapArg.values()) {
             if (vote.getState() != QuorumPeer.ServerState.LOOKING
                     || vote.getSid() == getId()) {
@@ -152,10 +149,6 @@ public class FastLeaderElectionV2Round {
         Vote selfVote = voteMapArg.get(getId());
         if (bestEpochVote.getSid() != getId()) {
             selfVote = selfVote.setElectionEpoch(bestEpochVote);
-        }
-
-        if (bestTotalOrderPredVote.getSid() != getId()) {
-            selfVote = selfVote.catchUpToVote(bestTotalOrderPredVote);
         }
 
         return selfVote;
@@ -367,6 +360,28 @@ public class FastLeaderElectionV2Round {
     }
 
     /**
+     * Given a vote the following should hold to be selected as eligible leader:
+     * if (vote.electedLeader().notPresent(voteMap)) return false
+     * if (!vote.electedLeaderVote().electedSelfAsLeader()) return false
+     * if (vote.isFollower() && !vote.electedLeaderVote().isLeaderWithState()
+     * return false
+     * else
+     *  return true.
+     * @param voteMap
+     * @param vote
+     * @return
+     */
+    protected boolean checkLeader(
+            final Map<Long, Vote> voteMap,
+            final Vote vote) {
+        return voteMap.containsKey(vote.getLeader()) &&
+                (voteMap.get(vote.getLeader()).electedSelfAsLeader() ||
+                        (vote.isFollower() &&
+                                voteMap.get(vote.getLeader())
+                                        .isLeader()));
+    }
+
+    /**
      * In the case there is a leader elected, and a quorum supporting
      * this leader, we have to check if the leader has voted and acked
      * that it is leading. We need this check to avoid that peers keep
@@ -376,7 +391,8 @@ public class FastLeaderElectionV2Round {
      * @param voteMap    set of votes
      * @param vote vote that points to a leader
      */
-    protected boolean checkLeader(
+    @Deprecated
+    protected boolean checkLeaderOld(
             final Map<Long, Vote> voteMap,
             final Vote vote) {
 

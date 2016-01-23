@@ -189,16 +189,20 @@ public class Vote {
      * @param other
      * @return
      */
-    public boolean match(Vote other) {
+    public boolean match(final Vote other) {
+        NotNull.check(other, "vote is null, not supported", LOG);
+        return matchForLeaderStability(other) &&
+                this.electionEpoch == other.electionEpoch &&
+                this.state == other.state;
+    }
+
+    public boolean matchForLeaderStability(final Vote other) {
         NotNull.check(other, "vote is null, not supported", LOG);
         return this.version == other.version &&
                 this.leader == other.leader &&
                 this.zxid == other.zxid &&
-                this.electionEpoch == other.electionEpoch &&
-                this.peerEpoch == other.peerEpoch &&
-                this.state == other.state;
+                this.peerEpoch == other.peerEpoch;
     }
-
     @Override
     public int hashCode() {
         return (int) (leader & zxid);
@@ -424,17 +428,21 @@ public class Vote {
     }
 
     /**
-     * Used when entering leader election. Vote will elect itself.
+     * Used when entering leader election. Vote will elect itself if there
+     * leader value is invalid.
      * @param peerEpoch start the vote with last agreed peer epoch
      * @param zxid start the vote with current zxid.
      * @return a new Vote.
      */
     public Vote leaderElectionVote(final long peerEpoch, final long zxid) {
         long increasedElectionEpoch = 1L;
-        if (this.getElectionEpoch() > increasedElectionEpoch) {
+        if (this.getElectionEpoch() >= increasedElectionEpoch) {
             increasedElectionEpoch = this.getElectionEpoch() + 1L;
         }
-        return new Vote(this.getVersion(), this.getSid(), zxid,
+
+        final long leaderSid = this.getLeader() <= 0 ? this.getSid() : this
+                .getLeader();
+        return new Vote(this.getVersion(), leaderSid, zxid,
                 increasedElectionEpoch, peerEpoch, this.getSid(),
                 QuorumPeer.ServerState.LOOKING);
     }
@@ -537,5 +545,21 @@ public class Vote {
 
     public Vote breakFromLeader() {
         return setServerState(QuorumPeer.ServerState.LOOKING);
+    }
+
+    public boolean isFollower() {
+        return getState() == QuorumPeer.ServerState.FOLLOWING;
+    }
+
+    public boolean isLooker() {
+        return getState() == QuorumPeer.ServerState.FOLLOWING;
+    }
+
+    public boolean isLeader() {
+        return getState() == QuorumPeer.ServerState.LEADING;
+    }
+
+    public boolean electedSelfAsLeader() {
+        return getLeader() == getSid();
     }
 }

@@ -112,8 +112,9 @@ public class EnsembleVoteView extends AbstractEnsemble {
             serverMap.put(quorumServer.id(), quorumServer);
         }
 
+        quorumCnxMesh = parent == null ? null : parent.getQuorumCnxMesh();
         mockQuorumBcast = new MockQuorumBcast(getId(), getQuorumSize(),
-                parent == null ? null : parent.getQuorumCnxMesh());
+                quorumCnxMesh);
     }
 
     public EnsembleVoteView(final long id, final int quorumSize,
@@ -217,8 +218,7 @@ public class EnsembleVoteView extends AbstractEnsemble {
 
     @Override
     public boolean isConnected(final long serverSid) {
-        return quorumCnxMesh != null && quorumCnxMesh.isConnectedToAny
-                (serverSid);
+        return quorumCnxMesh.isConnectedToAny(serverSid);
     }
 
     @Override
