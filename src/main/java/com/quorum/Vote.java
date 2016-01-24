@@ -493,60 +493,6 @@ public class Vote {
                 this.getState());
     }
 
-    /**
-     * Used by QuorumPeer only to help with setting current vote.
-     *
-     * @param other
-     * @param sid
-     * @return
-     */
-    public static Vote quorumPeerVoteSet(final Vote other, final long sid) {
-        return new Vote(other.getVersion(), other.getLeader(), other.getZxid(),
-                other.getElectionEpoch(), other.getPeerEpoch(), sid,
-                other.getState());
-    }
-
-    public Vote makeMeLeader(final Random random) {
-        return new Vote(this.getVersion(), this.getSid(),
-                random.nextInt(9999999),
-                random.nextInt(9999999),
-                random.nextInt(9999999), this.getSid(),
-                QuorumPeer.ServerState.LEADING);
-    }
-
-    public Vote makeMeFollower(final Vote leaderVote, final Random random) {
-        return new Vote(this.getVersion(), leaderVote.getLeader(),
-                leaderVote.getZxid(),
-                leaderVote.getElectionEpoch(),
-                leaderVote.getPeerEpoch(), this.getSid(),
-                QuorumPeer.ServerState.FOLLOWING);
-    }
-
-    public Vote makeMeLooker(final Vote totalOrderVote, final Random random) {
-        final long newZxid = totalOrderVote != null ?
-                random.nextInt(9999999) % (totalOrderVote.getZxid()+1L) :
-                random.nextInt(9999999);
-
-        final long newPeerEpoch = totalOrderVote != null ?
-                random.nextInt(9999999) % (totalOrderVote.getPeerEpoch()+1L) :
-                random.nextInt(9999999);
-
-        final long electionEpoch = totalOrderVote != null ?
-                totalOrderVote.getPeerEpoch() + 1L : 0;
-        return new Vote(this.getVersion(), this.getSid(),
-                // upto but not higher than leader's Zxid
-                newZxid,
-                // TODO: duh! deal with this later!!!!.
-                electionEpoch,
-                // upto but not higher than leader's peerEpoch
-                newPeerEpoch,
-                this.getSid(), QuorumPeer.ServerState.LOOKING);
-    }
-
-    public Vote breakFromLeader() {
-        return setServerState(QuorumPeer.ServerState.LOOKING);
-    }
-
     public boolean isFollower() {
         return getState() == QuorumPeer.ServerState.FOLLOWING;
     }
@@ -561,5 +507,94 @@ public class Vote {
 
     public boolean electedSelfAsLeader() {
         return getLeader() == getSid();
+    }
+
+    /**
+     * Used by QuorumPeer only to help with setting current vote.
+     *
+     * @param other
+     * @param sid
+     * @return
+     */
+    public static Vote quorumPeerVoteSet(final Vote other, final long sid) {
+        return new Vote(other.getVersion(), other.getLeader(), other.getZxid(),
+                other.getElectionEpoch(), other.getPeerEpoch(), sid,
+                other.getState());
+    }
+
+    /**
+     * Get a leader with random peerEpoch, Zxid and electionEpoch.
+     * @param random
+     * @return
+     */
+    public Vote makeMeLeader(final Random random) {
+        return new Vote(this.getVersion(), this.getSid(),
+                randomLong(random),
+                randomLong(random),
+                randomLong(random), this.getSid(),
+                QuorumPeer.ServerState.LEADING);
+    }
+
+    /**
+     * Rule - peerEpoch and electionEpoch must be equal to leader and Zxid
+     * cannot exceed leader.
+     * @param leaderVote
+     * @param random
+     * @return
+     */
+    public Vote makeMeFollower(final Vote leaderVote, final Random random) {
+        return new Vote(this.getVersion(), leaderVote.getLeader(),
+                randomLong(random,leaderVote.getZxid()),
+                leaderVote.getElectionEpoch(),
+                leaderVote.getPeerEpoch(), this.getSid(),
+                QuorumPeer.ServerState.FOLLOWING);
+    }
+
+    /**
+     * Rule - peerEpoch and Zxid cannot exceed totalOrderPredicate Vote,
+     * ElectionEpoch is free for all!.
+     * @param totalOrderVote
+     * @param random
+     * @return
+     */
+    public Vote makeMeLooker(final Vote totalOrderVote, final Random random) {
+        final long newZxid = totalOrderVote != null ?
+                randomLong(random, totalOrderVote.getZxid())
+                : randomLong(random);
+
+        final long newPeerEpoch = totalOrderVote != null ?
+                randomLong(random, totalOrderVote.getPeerEpoch())
+                : randomLong(random);
+
+        return new Vote(this.getVersion(), this.getSid(),
+                // upto but not higher than leader's Zxid
+                newZxid,
+                // TODO: duh! deal with this later!!!!.
+                randomLong(random),
+                // upto but not higher than leader's peerEpoch
+                newPeerEpoch,
+                this.getSid(), QuorumPeer.ServerState.LOOKING);
+    }
+
+    public Vote breakFromLeader() {
+        return setServerState(QuorumPeer.ServerState.LOOKING);
+    }
+
+
+    // Lets not get a very large number , hex print makes logs messy.
+    private static int MAX_RAND_NUM = 9999999;
+
+    private static long randomLong(final Random random) {
+        return Math.abs(random.nextInt(MAX_RAND_NUM));
+    }
+
+    /**
+     * max inclusive.
+     * @param random
+     * @param max inclusive
+     * @return
+     */
+    private static long randomLong(final Random random, final long max) {
+        return randomLong(random) % (max + 1L);
     }
 }

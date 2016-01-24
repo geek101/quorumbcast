@@ -45,21 +45,41 @@ public class MockEnsemble extends AbstractEnsemble {
                 getQuorumCnxMesh());
     }
 
-    protected MockEnsemble(final Ensemble parentEnsemble,
-                           final int stableTimeout,
-                           final TimeUnit stableTimeoutUnit) {
-        super(parentEnsemble, stableTimeout, stableTimeoutUnit);
+    protected MockEnsemble(
+            final Ensemble parentEnsemble, final QuorumCnxMesh quorumCnxMeshArg,
+            final Collection<ImmutablePair<Long, QuorumPeer.ServerState>>
+                                   flatQuorumWithState,
+            final Collection<Collection<ImmutablePair<Long,
+                    QuorumPeer.ServerState>>> partitionedQuorumArg,
+            final int stableTimeout,
+            final TimeUnit stableTimeoutUnit) {
+        super(parentEnsemble, quorumCnxMeshArg, flatQuorumWithState,
+                partitionedQuorumArg, stableTimeout, stableTimeoutUnit);
         mockQuorumBcast = new MockQuorumBcast(getId(),
                 parentEnsemble.getQuorumSize(),
-                parentEnsemble.getQuorumCnxMesh());
+                quorumCnxMeshArg);
     }
 
+    /**
+     * Override this in the implementation to spin up the right type of
+     * ensemble using the parent.
+     *
+     * @param parentEnsemble
+     * @param quorumCnxMeshArg
+     * @param flatQuorumWithState
+     * @param partitionedQuorumArg @return
+     */
     @Override
     public Ensemble createEnsemble(
-            final Ensemble parentEnsemble,
+            final Ensemble parentEnsemble, final QuorumCnxMesh quorumCnxMeshArg,
             final Collection<ImmutablePair<Long, QuorumPeer.ServerState>>
-                    quorumWithState) throws ElectionException {
-        return new MockEnsemble(parentEnsemble,
+                                               flatQuorumWithState,
+            final Collection<Collection<ImmutablePair<Long,
+                                           QuorumPeer.ServerState>>>
+                                               partitionedQuorumArg)
+            throws ElectionException {
+        return new MockEnsemble(parentEnsemble, quorumCnxMeshArg,
+                flatQuorumWithState, partitionedQuorumArg,
                 stableTimeout, stableTimeoutUnit);
     }
 

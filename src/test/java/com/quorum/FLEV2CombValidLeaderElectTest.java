@@ -19,6 +19,7 @@ package com.quorum;
 
 import com.quorum.helpers.Ensemble;
 import com.quorum.helpers.EnsembleFactory;
+import com.quorum.helpers.FLEV2BaseTest;
 import com.quorum.helpers.PortAssignment;
 import com.quorum.helpers.EnsembleHelpers;
 import com.quorum.netty.BaseTest;
@@ -43,49 +44,34 @@ import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertTrue;
 
 @RunWith(Parameterized.class)
-public class FLEV2CombValidLeaderElectTest extends BaseTest {
-    private static final Logger LOG
-            = LoggerFactory.getLogger(FLEV2CombValidLeaderElectTest.class);
-    private String ensembleType;
-    private final int quorumSize;
-    private final int stableTimeout;
-    private final TimeUnit stableTimeoutUnit;
-    private final List<QuorumServer> quorumServerList = new ArrayList<>();
-    private final Long readTimeoutMsec = 300L;
-    private final Long connectTimeoutMsec = 500L;
-    private final Long keepAliveTimeoutMsec = 250L;
-    private final Integer keepAliveCount = 3;
-
+public class FLEV2CombValidLeaderElectTest extends FLEV2BaseTest {
     @Parameterized.Parameters
     public static Collection quorumTypeAndSize() {
         return Arrays.asList( new Object [][] {
                 // type, quorum-size, stable-timeout, stable-timeout unit
-                { "mock", 3, 1, TimeUnit.MILLISECONDS },
-                { "mock", 5, 1, TimeUnit.MILLISECONDS },
-                { "mock", 7, 1, TimeUnit.MILLISECONDS },
-                { "mockbcast", 3, 50, TimeUnit.MILLISECONDS},
-                { "mockbcast", 5, 50, TimeUnit.MILLISECONDS},
-                { "quorumbcast", 3, 350, TimeUnit.MILLISECONDS},
-                { "quorumbcast-ssl", 3, 550, TimeUnit.MILLISECONDS}
+                { "mock", 3, 1, 0, 0, 0, 0, TimeUnit.MILLISECONDS },
+                { "mock", 5, 1, 0, 0, 0, 0, TimeUnit.MILLISECONDS },
+                { "mock", 7, 1, 0, 0, 0, 0, TimeUnit.MILLISECONDS },
+                { "mockbcast", 3, 50, 0, 0, 0, 0, TimeUnit.MILLISECONDS},
+                { "mockbcast", 5, 50, 0, 0, 0, 0, TimeUnit.MILLISECONDS},
+                { "quorumbcast", 3, 150, 150, 250, 50, 3,
+                        TimeUnit.MILLISECONDS},
+                { "quorumbcast-ssl", 3, 350, 350, 550, 50, 7,
+                        TimeUnit.MILLISECONDS}
         });
     }
 
     public FLEV2CombValidLeaderElectTest(final String ensembleType,
-                                        final int quorumSize,
-                                        final int stableTimeout,
-                                        final TimeUnit stableTimeUnit) {
-        this.ensembleType = ensembleType;
-        this.quorumSize = quorumSize;
-        this.stableTimeout = stableTimeout;
-        this.stableTimeoutUnit = stableTimeUnit;
-        for (long sid = 1; sid <= quorumSize; sid++) {
-            final QuorumServer quorumServer = new QuorumServer(sid,
-                    new InetSocketAddress("localhost",
-                            PortAssignment.unique()),
-                    new InetSocketAddress("localhost",
-                            PortAssignment.unique()));
-            this.quorumServerList.add(quorumServer);
-        }
+                                         final int quorumSize,
+                                         final int stableTimeoutMsec,
+                                         final int readTimeoutMsec,
+                                         final int connectTimeoutMsec,
+                                         final int keepAliveTimeoutMsec,
+                                         final int keepAliveCount,
+                                         final TimeUnit timeoutUnit) {
+        super(ensembleType, quorumSize, stableTimeoutMsec, readTimeoutMsec,
+                connectTimeoutMsec, keepAliveTimeoutMsec, keepAliveCount,
+                timeoutUnit);
     }
 
     @Before
@@ -167,14 +153,7 @@ public class FLEV2CombValidLeaderElectTest extends BaseTest {
 
         done.verifyLeaderAfterShutDown();
 
-        LOG.warn("verified " + configured + "->" + moved + " : election[" +
-                EnsembleHelpers.getSidWithServerStateStr(
-                        ImmutablePair.of(
-                                moved.getFleToRun().getId(),
-                                moved.getFleToRun().getState()))
-                + "] -> " + done + " , leader: "
-                + done.getLeaderLoopResult().values()
-                .iterator().next().getLeader());
+        verifyPrintHelper(configured, moved, done);
     }
 
     private String getInitLookingQuorumStr() {
@@ -185,17 +164,5 @@ public class FLEV2CombValidLeaderElectTest extends BaseTest {
         return str + "}";
     }
 
-    public Ensemble createEnsemble(final Long id) throws ElectionException {
-        ClassLoader cl = getClass().getClassLoader();
-        return EnsembleFactory.createEnsemble(
-                this.ensembleType, id, this.quorumSize, this.stableTimeout,
-                this.stableTimeoutUnit, this.quorumServerList,
-                this.readTimeoutMsec,
-                this.connectTimeoutMsec, this.keepAliveTimeoutMsec,
-                this.keepAliveCount,
-                cl.getResource(this.keyStore.get(0)).getFile(),
-                this.keyPassword.get(0),
-                cl.getResource(this.trustStore.get(0)).getFile(),
-                this.trustPassword.get(0), this.trustStoreCAAlias);
-    }
+
 }

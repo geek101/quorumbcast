@@ -8,7 +8,7 @@ import java.util.List;
 import java.util.concurrent.TimeUnit;
 
 public class EnsembleFactory {
-    public static Ensemble createEnsemble (
+    public static Ensemble createEnsemble(
             final String type, final long id, final int quorumSize,
             final int stableTimeout, final TimeUnit stableTimeUnit,
             final List<QuorumServer> servers,
@@ -46,14 +46,5 @@ public class EnsembleFactory {
         }
 
         throw new IllegalArgumentException("invalid type: " + type);
-    }
-
-    public static Ensemble createEnsemble(
-            final String type, final long id, final int quorumSize,
-            final int stableTimeout, final TimeUnit stableTimeUnit)
-            throws ElectionException {
-        return createEnsemble(type, id, quorumSize, stableTimeout,
-                stableTimeUnit, null, null, null, null, null, null,
-                null, null, null, null);
     }
 }

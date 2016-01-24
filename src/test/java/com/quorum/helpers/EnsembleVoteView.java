@@ -65,7 +65,6 @@ public class EnsembleVoteView extends AbstractEnsemble {
 
     private MockQuorumBcast mockQuorumBcast;
 
-
     private Map<Long,
                 ImmutablePair<QuorumBcastWithCnxMesh, VoteViewWrapper>>
             quorumBcastAndVoteViewMap = new HashMap<>();
@@ -111,10 +110,6 @@ public class EnsembleVoteView extends AbstractEnsemble {
             }
             serverMap.put(quorumServer.id(), quorumServer);
         }
-
-        quorumCnxMesh = parent == null ? null : parent.getQuorumCnxMesh();
-        mockQuorumBcast = new MockQuorumBcast(getId(), getQuorumSize(),
-                quorumCnxMesh);
     }
 
     public EnsembleVoteView(final long id, final int quorumSize,
@@ -140,14 +135,29 @@ public class EnsembleVoteView extends AbstractEnsemble {
                 trustStorePassword, trustStoreCAAlias);
         this.fles = new HashMap<>();
 
+        quorumCnxMesh = new QuorumCnxMeshBase(this.getQuorumSize());
+        quorumCnxMesh.connectAll();
+        mockQuorumBcast = new MockQuorumBcast(getId(), getQuorumSize(),
+                quorumCnxMesh);
+        final Collection<ImmutablePair<Long, QuorumPeer
+                .ServerState>> noPartition = new ArrayList<>();
         for (final FLEV2Wrapper fle : getQuorumWithInitVoteSet(
                 quorumSize, new QuorumMajWrapper(quorumSize))) {
             this.fles.put(fle.getId(), fle);
+            noPartition.add(ImmutablePair.of(fle.getId(), fle.getState()));
         }
+        this.partitionedQuorum.add(noPartition);
         this.LOG = new LogPrefix(LOGS, toString());
     }
 
     public EnsembleVoteView(final Ensemble parentEnsemble,
+                            final QuorumCnxMesh quorumCnxMeshArg,
+                            final Collection<ImmutablePair<Long,
+                                    QuorumPeer.ServerState>>
+                                    flatQuorumWithState,
+                            final Collection<Collection<ImmutablePair<Long,
+                                    QuorumPeer.ServerState>>>
+                                    partitionedQuorumArg,
                             final int stableTimeout,
                             final TimeUnit stableTimeoutUnit,
                             final List<QuorumServer> servers)
@@ -169,26 +179,34 @@ public class EnsembleVoteView extends AbstractEnsemble {
                 ((EnsembleVoteView)parentEnsemble).trustStorePassword,
                 ((EnsembleVoteView)parentEnsemble).trustStoreCAAlias);
         this.fles = ((AbstractEnsemble)parentEnsemble).fles;
-        this.partitionedQuorum = ((AbstractEnsemble) parentEnsemble)
-                .partitionedQuorum;
+        this.quorumCnxMesh = quorumCnxMeshArg;
+        mockQuorumBcast = new MockQuorumBcast(getId(), getQuorumSize(),
+                quorumCnxMesh);
+        this.flatQuorumWithState = flatQuorumWithState;
+        this.partitionedQuorum = partitionedQuorumArg;
         this.LOG = new LogPrefix(LOGS, toString());
     }
 
     @Override
     public Ensemble createEnsemble(
             final Ensemble parentEnsemble,
+            final QuorumCnxMesh quorumCnxMeshArg,
             final Collection<ImmutablePair<Long, QuorumPeer.ServerState>>
-                    quorumWithState) throws ElectionException {
+                    flatQuorumWithState,
+            final Collection<Collection<ImmutablePair<Long,
+                    QuorumPeer.ServerState>>>
+                    partitionedQuorumArg) throws ElectionException {
         List<QuorumServer> serversForEnsemble = servers;
-        if (quorumWithState != null) {
+        if (flatQuorumWithState != null) {
             serversForEnsemble = new ArrayList<>();
             for (ImmutablePair<Long, QuorumPeer.ServerState> pair
-                    : quorumWithState) {
+                    : flatQuorumWithState) {
                 serversForEnsemble.add(serverMap.get(pair.getLeft()));
             }
         }
 
-        return new EnsembleVoteView(parentEnsemble,
+        return new EnsembleVoteView(parentEnsemble, quorumCnxMeshArg,
+                flatQuorumWithState, partitionedQuorumArg,
                 stableTimeout, stableTimeoutUnit, serversForEnsemble);
     }
 

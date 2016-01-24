@@ -43,11 +43,17 @@ public class EnsembleMockBcast extends AbstractEnsemble {
                 getQuorumCnxMesh());
     }
 
-    public EnsembleMockBcast(final Ensemble parentEnsemble,
-                             final int stableTimeout,
-                             final TimeUnit stableTimeoutUnit)
+    public EnsembleMockBcast(
+            final Ensemble parentEnsemble, final QuorumCnxMesh quorumCnxMeshArg,
+            final Collection<ImmutablePair<Long, QuorumPeer.ServerState>>
+                                     flatQuorumWithState,
+            final Collection<Collection<ImmutablePair<Long,
+                                     QuorumPeer.ServerState>>>
+                    partitionedQuorumArg,
+            final int stableTimeout, final TimeUnit stableTimeoutUnit)
             throws ElectionException {
-        super(parentEnsemble, stableTimeout, stableTimeoutUnit);
+        super(parentEnsemble, quorumCnxMeshArg, flatQuorumWithState,
+                partitionedQuorumArg, stableTimeout, stableTimeoutUnit);
         mockQuorumBcast = new MockQuorumBcast(getId(),
                 parentEnsemble.getQuorumSize(),
                 parentEnsemble.getQuorumCnxMesh());
@@ -56,9 +62,14 @@ public class EnsembleMockBcast extends AbstractEnsemble {
     @Override
     public Ensemble createEnsemble(
             final Ensemble parentEnsemble,
+            final QuorumCnxMesh quorumCnxMeshArg,
             final Collection<ImmutablePair<Long, QuorumPeer.ServerState>>
-                    quorumWithState) throws ElectionException {
-        return new EnsembleMockBcast(parentEnsemble,
+                    flatQuorumWithState,
+            final Collection<Collection<ImmutablePair<Long,
+                    QuorumPeer.ServerState>>>
+                    partitionedQuorumArg) throws ElectionException {
+        return new EnsembleMockBcast(parentEnsemble, quorumCnxMeshArg,
+                flatQuorumWithState, partitionedQuorumArg,
                 stableTimeout, stableTimeoutUnit);
     }
 

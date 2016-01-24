@@ -46,10 +46,13 @@ public abstract class AbstractEnsemble implements Ensemble {
     }
 
     private final Integer quorumSize;     /// Size of the ensemble.
+
     private final QuorumVerifier quorumVerifier;     /// Done with size.
 
     protected QuorumCnxMesh quorumCnxMesh;  /// Connectivity mesh based on
-                                           // configure string
+    // configure string
+    protected Collection<ImmutablePair<Long, QuorumPeer.ServerState>>
+                                                   flatQuorumWithState;
     protected Collection<Collection<ImmutablePair<Long, QuorumPeer
                                                    .ServerState>>>
                                                    partitionedQuorum
@@ -72,7 +75,7 @@ public abstract class AbstractEnsemble implements Ensemble {
             = new ConcurrentHashMap<>();
     protected HashMap<Long, Vote> lookingResultVotes = new HashMap<>();
     private boolean runLookingDone = false;
-    private ImmutablePair<Long, Long> safteyPred;
+    private Long safetyPred;
 
     protected LogPrefix LOG = null;
     final long rgenseed = System.currentTimeMillis();
@@ -100,27 +103,65 @@ public abstract class AbstractEnsemble implements Ensemble {
             this.parent = this;
         } else {
             this.parent = parent;
+            this.fles = ((AbstractEnsemble)parent).fles;
         }
         this.stableTimeout = stableTimeout;
         this.stableTimeoutUnit = stableTimeoutUnit;
     }
 
+    /**
+     * Called only at create time, this is equivalent to
+     * createEnsemble(id, size, "{ 1K, 2K, .... NK }"), i.e no partitions
+     * everyone can connect to everyone else.
+     * @param id
+     * @param quorumSize
+     * @param stableTimeout
+     * @param stableTimeoutUnit
+     * @throws ElectionException
+     */
     public AbstractEnsemble(final long id, final int quorumSize,
                             final int stableTimeout,
                             final TimeUnit stableTimeoutUnit)
             throws ElectionException {
         this(id, quorumSize, new QuorumMajWrapper(quorumSize),
                 EnsembleState.INVALID, null, stableTimeout, stableTimeoutUnit);
-        this.fles = new HashMap<>();
+        this.quorumCnxMesh = new QuorumCnxMeshBase(this.quorumSize);
+        this.quorumCnxMesh.connectAll();
 
+        final Collection<ImmutablePair<Long, QuorumPeer
+                .ServerState>> noPartition = new ArrayList<>();
+        this.fles = new HashMap<>();
         for (final FLEV2Wrapper fle : getQuorumWithInitVoteSet(
                 this.quorumSize, this.quorumVerifier)) {
             this.fles.put(fle.getId(), fle);
+            noPartition.add(ImmutablePair.of(fle.getId(), fle.getState()));
         }
+        this.partitionedQuorum.add(noPartition);
+        this.LOG = new LogPrefix(LOGS, toString());
+    }
+
+    protected AbstractEnsemble(
+            final Ensemble parentEnsemble, final QuorumCnxMesh quorumCnxMeshArg,
+            final Collection<ImmutablePair<Long, QuorumPeer.ServerState>>
+                                       flatQuorumWithState,
+            final Collection<Collection<ImmutablePair<Long,
+                                       QuorumPeer.ServerState>>>
+                    partitionedQuorumArg,
+            final int stableTimeout,
+            final TimeUnit stableTimeoutUnit) {
+        this(((AbstractEnsemble)parentEnsemble).getId() + 1,
+                parentEnsemble.getQuorumSize(),
+                ((AbstractEnsemble)parentEnsemble).getQuorumVerifier(),
+                ((AbstractEnsemble)parentEnsemble).getState(),
+                parentEnsemble, stableTimeout, stableTimeoutUnit);
+        this.quorumCnxMesh = quorumCnxMeshArg;
+        this.flatQuorumWithState = flatQuorumWithState;
+        this.partitionedQuorum = partitionedQuorumArg;
         this.LOG = new LogPrefix(LOGS, toString());
     }
 
     protected AbstractEnsemble(final Ensemble parentEnsemble,
+
                                final int stableTimeout,
                                final TimeUnit stableTimeoutUnit) {
         this(((AbstractEnsemble)parentEnsemble).getId() + 1,
@@ -171,6 +212,11 @@ public abstract class AbstractEnsemble implements Ensemble {
         final List<String> stringList = new ArrayList<>();
         for (final Collection<ImmutablePair<Long, QuorumPeer.ServerState>> t
                 : partitionedQuorum) {
+            if (fles == null) {
+                stringList.add(
+                        EnsembleHelpers.getQuorumServerStateCollectionStr(t));
+                continue;
+            }
             final TreeMap<Long, Long> sidMap = new TreeMap<>();
             for (ImmutablePair<Long, QuorumPeer.ServerState> e : t) {
                 sidMap.put(e.getLeft(), e.getLeft());
@@ -206,8 +252,12 @@ public abstract class AbstractEnsemble implements Ensemble {
      */
     public abstract Ensemble createEnsemble(
             final Ensemble parentEnsemble,
-            final Collection<ImmutablePair<Long, QuorumPeer.ServerState>>
-            quorumWithState) throws ElectionException;
+            final QuorumCnxMesh quorumCnxMeshArg,
+            final Collection<
+                    ImmutablePair<Long, QuorumPeer.ServerState>>
+                    flatQuorumWithState,
+            final Collection<Collection<ImmutablePair<Long, QuorumPeer
+                    .ServerState>>> partitionedQuorumArg) throws ElectionException;
 
     protected abstract FLEV2Wrapper createFLEV2(
             final long sid, final QuorumVerifier quorumVerifier);
@@ -296,16 +346,12 @@ public abstract class AbstractEnsemble implements Ensemble {
 
     private void verifySafetyPredicate(final Vote vote) {
         assertTrue("vote not null", vote != null);
-        if (vote.getPeerEpoch() != safteyPred.getLeft() ||
-                vote.getZxid() != safteyPred.getRight()) {
+        if (vote.getPeerEpoch() != safetyPred) {
             final String errStr = "leader vote : " + vote + " failed"
-                    + " saftey check peerEpoch: 0x" + Long.toHexString
-                    (safteyPred.getLeft()) + ", Zxid: 0x"
-                    + Long.toHexString(safteyPred.getRight());
-            assertEquals(errStr, safteyPred.getLeft().longValue(),
+                    + " saftey check peerEpoch: 0x"
+                    + Long.toHexString(safetyPred);
+            assertEquals(errStr, safetyPred.longValue(),
                     vote.getPeerEpoch());
-            assertEquals(errStr, safteyPred.getRight().longValue(),
-                    vote.getZxid());
         }
     }
 
@@ -356,7 +402,7 @@ public abstract class AbstractEnsemble implements Ensemble {
         return CompletableFuture.completedFuture(null);
     }
 
-    public ImmutablePair<Long, QuorumPeer.ServerState>
+    public static ImmutablePair<Long, QuorumPeer.ServerState>
     parseHostStateString(final String nodeStr,
                          final HashMap<Long,
                                  ImmutablePair<Long,
@@ -373,8 +419,9 @@ public abstract class AbstractEnsemble implements Ensemble {
         return ImmutablePair.of(nodeId, serverState);
     }
 
-    public int configureParser(final String quorumStr, int idx,
+    public static int configureParser(final String quorumStr, int idx,
                                final HashSet<Long> sidMap,
+                               final QuorumCnxMesh quorumCnxMeshArg,
                                final HashMap<Long,
                                        ImmutablePair<Long,
                                                QuorumPeer.ServerState>>
@@ -392,6 +439,7 @@ public abstract class AbstractEnsemble implements Ensemble {
         for (int i = idx; i < quorumStr.length(); i++) {
             if (quorumStr.charAt(idx) == '{') {
                 i = configureParser(quorumStr, i+1, new HashSet<>(),
+                        quorumCnxMeshArg,
                         flatResult, partitionResult);
             } else if (quorumStr.charAt(i) == '}') {
                 final ImmutablePair<Long, QuorumPeer.ServerState> pair
@@ -403,7 +451,7 @@ public abstract class AbstractEnsemble implements Ensemble {
 
                 for (final long sidSrc : sidMap) {
                     for (final long sidDst : sidMap) {
-                        quorumCnxMesh.connect(sidSrc, sidDst);
+                        quorumCnxMeshArg.connect(sidSrc, sidDst);
                     }
                 }
                 partitionResult.add(currentPartitionResult);
@@ -439,14 +487,18 @@ public abstract class AbstractEnsemble implements Ensemble {
      */
     public Ensemble configure(final String quorumStr) throws ElectionException,
             ExecutionException, InterruptedException {
-        quorumCnxMesh = new QuorumCnxMeshBase(quorumSize);
+        final QuorumCnxMesh quorumCnxMeshLocal
+                = new QuorumCnxMeshBase(quorumSize);
+        final Collection<Collection<ImmutablePair<Long, QuorumPeer
+                .ServerState>>> partitionedQuorumLocal = new ArrayList<>();
         final HashMap<Long, ImmutablePair<Long, QuorumPeer.ServerState>>
                 flatQuorum = new HashMap<>();
 
-        configureParser(quorumStr, 0, null, flatQuorum, partitionedQuorum);
+        configureParser(quorumStr, 0, null, quorumCnxMeshLocal, flatQuorum,
+                partitionedQuorumLocal);
 
-        // de-dup flatQuorum
-        return configureAfterMesh(flatQuorum.values());
+        return configure(quorumCnxMeshLocal,
+                flatQuorum.values(), partitionedQuorumLocal);
     }
 
     /**
@@ -459,20 +511,16 @@ public abstract class AbstractEnsemble implements Ensemble {
     public Ensemble configure(final Collection<
             ImmutablePair<Long, QuorumPeer.ServerState>> quorumWithState)
             throws ElectionException, ExecutionException, InterruptedException {
-        quorumCnxMesh = new QuorumCnxMeshBase(quorumSize);
-        for (final ImmutablePair<Long, QuorumPeer.ServerState> p
-                : quorumWithState) {
-            for (final ImmutablePair<Long, QuorumPeer.ServerState> q
-                    : quorumWithState) {
-                quorumCnxMesh.connect(p.getLeft(), q.getLeft());
-            }
-        }
-
-        return configureAfterMesh(quorumWithState);
+        return configure(EnsembleHelpers.getQuorumServerStateCollectionStr(
+                (quorumWithState)));
     }
 
-    public Ensemble configureAfterMesh(final Collection<
-            ImmutablePair<Long, QuorumPeer.ServerState>> quorumWithState)
+    private Ensemble configure(
+            final QuorumCnxMesh quorumCnxMeshArg,
+            final Collection<
+            ImmutablePair<Long, QuorumPeer.ServerState>> flatQuorumWithState,
+            final Collection<Collection<ImmutablePair<Long, QuorumPeer
+            .ServerState>>> partitionedQuorumArg)
             throws ElectionException, ExecutionException, InterruptedException {
         if (getState() != EnsembleState.INITIAL) {
             throw new IllegalAccessError("Ensemble: " + id + " not in " +
@@ -480,8 +528,9 @@ public abstract class AbstractEnsemble implements Ensemble {
         }
 
         final AbstractEnsemble childEnsemble
-                = (AbstractEnsemble) createEnsemble(this, quorumWithState);
-        childEnsemble.configureFromParent(quorumWithState);
+                = (AbstractEnsemble) createEnsemble(this, quorumCnxMeshArg,
+                flatQuorumWithState, partitionedQuorumArg);
+        childEnsemble.prepareSelf();
         childEnsemble.verifyLookingVotes();
         this.children.add(childEnsemble);
         return childEnsemble;
@@ -519,7 +568,7 @@ public abstract class AbstractEnsemble implements Ensemble {
         // If this is a follower then check if moving this to looking
         // breaks the learner quorum
         if (fle.getState() == QuorumPeer.ServerState.FOLLOWING) {
-            final HashSet<Long> learnerSet = getLearnerQuorum();
+            final HashSet<Long> learnerSet = getLearnerQuorum().getRight();
             learnerSet.remove(fle.getId());
             if (!getQuorumVerifier().containsQuorum(learnerSet)) {
                 // no quorum after so reset all to looking.
@@ -565,21 +614,18 @@ public abstract class AbstractEnsemble implements Ensemble {
                     + " already has leader loop result");
         }
 
-        ImmutablePair<Long, Long> bestPeerEpochAndZxid = null;
+        Long bestPeerEpoch = null;
         for (final FLEV2Wrapper fle : fles.values()) {
-            if (bestPeerEpochAndZxid == null ||
-                    (fle.getSelfVote().getPeerEpoch() > bestPeerEpochAndZxid
-                            .getLeft() ||
-                            (fle.getSelfVote().getPeerEpoch() ==
-                                    bestPeerEpochAndZxid.getLeft() &&
-                                    fle.getSelfVote().getZxid() >
-                                            bestPeerEpochAndZxid.getRight()))) {
-                bestPeerEpochAndZxid = ImmutablePair.of(fle.getSelfVote()
-                        .getPeerEpoch(), fle.getSelfVote().getZxid());
+            if (bestPeerEpoch == null) {
+                bestPeerEpoch = fle.getSelfVote().getPeerEpoch();
+                continue;
             }
+
+            bestPeerEpoch = Math.max(fle.getSelfVote().getPeerEpoch(),
+                    bestPeerEpoch);
         }
 
-        safteyPred = bestPeerEpochAndZxid;
+        safetyPred = bestPeerEpoch;
         runLookingDone = true;
     }
 
@@ -613,7 +659,8 @@ public abstract class AbstractEnsemble implements Ensemble {
             final AbstractEnsemble ensemble) throws ElectionException,
             InterruptedException, ExecutionException {
         final AbstractEnsemble childEnsemble
-                = (AbstractEnsemble)createEnsemble(ensemble, null);
+                = (AbstractEnsemble)createEnsemble(ensemble, this
+                .quorumCnxMesh, null, this.partitionedQuorum);
         childEnsemble.copyFromParent();
         return childEnsemble;
     }
@@ -657,63 +704,32 @@ public abstract class AbstractEnsemble implements Ensemble {
         return this;
     }
 
-    public Ensemble configureFromParent(
-            final Collection<ImmutablePair<Long, QuorumPeer.ServerState>>
-                    quorumWithState)
+    protected Ensemble prepareSelf()
             throws ExecutionException, InterruptedException {
         if (getState() != EnsembleState.CONFIGURED) {
             throw new IllegalAccessError("Ensemble: " + id + " not in " +
                     "configured state.");
         }
+        final ImmutablePair<Map<Long, Vote>, Vote> learnerVotePair =
+                coerceLearnerVotes();
+        final Map<Long, Vote> followingVoteMap = coerceLookingVotes(
+                learnerVotePair.getRight());
+
+        // check if there is an error
+        for (final long sid : learnerVotePair.getLeft().keySet()) {
+            if (followingVoteMap.containsKey(sid)) {
+                throw new RuntimeException("error: sid: " + sid + " clash!");
+            }
+        }
+
+        // merge all the votes since it is safe to do so.
+        followingVoteMap.putAll(learnerVotePair.getLeft());
+
         final HashMap<Long, FLEV2Wrapper> copyFles = new HashMap<>();
-        // get the leader FLE first.
-        FLEV2Wrapper leaderFle = null;
         for (final ImmutablePair<Long, QuorumPeer.ServerState> p
-                : quorumWithState) {
-            if (p.getRight() == QuorumPeer.ServerState.LEADING) {
-                if (leaderFle != null) {
-                    throw new IllegalStateException("ensemble: " + id + " has" +
-                            " two leaders.");
-                }
-                leaderFle = fles.get(p.getLeft());
-            }
-        }
-
-        Vote leaderVote = null;
-        if (leaderFle != null) {
-            leaderVote = leaderFle.getSelfVote().makeMeLeader(random);
-            leaderFle = copyFLEV2(leaderFle, leaderVote);
-            copyFles.put(leaderFle.getId(), leaderFle);
-        }
-
-        // For every follower copy the leader's totalOrderPredicate
-        for (final ImmutablePair<Long, QuorumPeer.ServerState> p
-                : quorumWithState) {
-            if (p.getRight() == QuorumPeer.ServerState.FOLLOWING) {
-                if (leaderFle == null) {
-                    throw new IllegalStateException("ensemble: " + id + " has" +
-                            " followers without a leader");
-                }
-                copyFles.put(p.getLeft(), copyFLEV2(
-                        fles.get(p.getLeft()),
-                        fles.get(p.getLeft()).getSelfVote()
-                                .makeMeFollower(leaderVote, random)));
-            }
-        }
-
-        // now if there are any in looking state, set their vote as wanderers
-        for (final ImmutablePair<Long, QuorumPeer.ServerState> p
-                : quorumWithState) {
-            if (p.getRight() == QuorumPeer.ServerState.LOOKING) {
-                if (leaderVote != null) {
-                    copyFles.put(p.getLeft(), copyFLEV2(fles.get(p.getLeft()),
-                            fles.get(p.getLeft()).getSelfVote()
-                                    .makeMeLooker(leaderVote, random)));
-                } else {
-                    copyFles.put(p.getLeft(), copyFLEV2(fles.get(p.getLeft()),
-                            fles.get(p.getLeft()).getSelfVote().copy()));
-                }
-            }
+                : flatQuorumWithState) {
+            copyFles.put(p.getLeft(), copyFLEV2(fles.get(p.getLeft()),
+                    followingVoteMap.get(p.getLeft())));
         }
 
         this.fles = copyFles;
@@ -725,15 +741,96 @@ public abstract class AbstractEnsemble implements Ensemble {
         fleToRun = fles.get(sid);
     }
 
-    private HashSet<Long> getLearnerQuorum() {
+    /**
+     * If there is a leader and followers then coerce them according to
+     * the following rules:
+     * Leader and Followers have the same peerEpoch, leader has the highest
+     * Zxid and followers have zxid upto leader's but cannot exceed.
+     * @return Pair of LeaderVote and MinZxidFollowerVote or pair of null, null
+     */
+    private ImmutablePair<Map<Long, Vote>, Vote> coerceLearnerVotes() {
+        final ImmutablePair<Long, HashSet<Long>> pair
+                = getLeaderQuorumFromFlatServerState();
+        if (pair.getLeft() == Long.MIN_VALUE) {
+            return ImmutablePair.of(new HashMap<>(), null);
+        }
+
+        final Map<Long, Vote> voteMap = new HashMap<>();
+        final Vote leaderVote = createVoteWithState(pair.getLeft(),
+                QuorumPeer.ServerState.LEADING).makeMeLeader(random);
+        voteMap.put(leaderVote.getSid(), leaderVote);
+
+        Vote minZxidVote = null;
+        for (final long sid : pair.getRight()) {
+            if (sid == leaderVote.getSid()) {
+                continue;
+            }
+
+            final Vote followerVote
+                    = createVoteWithState(sid, QuorumPeer.ServerState.FOLLOWING)
+                    .makeMeFollower(leaderVote, random);
+            voteMap.put(followerVote.getSid(), followerVote);
+            if (minZxidVote == null ||
+                    minZxidVote.getZxid() > followerVote.getZxid()) {
+                minZxidVote = followerVote;
+            }
+        }
+
+        return ImmutablePair.of(voteMap, minZxidVote);
+    }
+
+    private Map<Long, Vote> coerceLookingVotes(final Vote totalOrderVote) {
+        final Map<Long, Vote> voteMap = new HashMap<>();
+        for (final ImmutablePair<Long, QuorumPeer.ServerState> pair
+                : flatQuorumWithState) {
+            if (pair.getRight() != QuorumPeer.ServerState.LOOKING) {
+                continue;
+            }
+
+            final Vote lookingVote = createVoteWithState(pair.getLeft(),
+                    QuorumPeer.ServerState.FOLLOWING).makeMeLooker
+                    (totalOrderVote, random);
+            voteMap.put(lookingVote.getSid(), lookingVote);
+        }
+
+        return voteMap;
+    }
+
+    private ImmutablePair<Long, HashSet<Long>>
+            getLeaderQuorumFromFlatServerState() {
+        long leaderSid = Long.MIN_VALUE;
+        final HashSet<Long> learnerSet = new HashSet<>();
+        for (final ImmutablePair<Long, QuorumPeer.ServerState> pair
+                : flatQuorumWithState) {
+            if (pair.getRight() == QuorumPeer.ServerState.LEADING) {
+                assert leaderSid == Long.MIN_VALUE;
+                leaderSid = pair.getLeft();
+                learnerSet.add(pair.getLeft());
+                continue;
+            }
+
+            if (pair.getRight() == QuorumPeer.ServerState.FOLLOWING) {
+                learnerSet.add(pair.getLeft());
+            }
+        }
+        return ImmutablePair.of(leaderSid, learnerSet);
+    }
+
+    private ImmutablePair<Long, HashSet<Long>> getLearnerQuorum() {
+        long leaderSid = Long.MIN_VALUE;
         final HashSet<Long> learnerSet = new HashSet<>();
         for (final FLEV2Wrapper fle : fles.values()) {
-            if (fle.getState() == QuorumPeer.ServerState.LEADING ||
-                    fle.getState() == QuorumPeer.ServerState.FOLLOWING) {
+            if (fle.getState() == QuorumPeer.ServerState.LEADING) {
+                assert leaderSid == Long.MIN_VALUE;
+                leaderSid = fle.getId();
+            }
+
+            if (fle.getState() == QuorumPeer.ServerState.LEADING
+                    || fle.getState() == QuorumPeer.ServerState.FOLLOWING) {
                 learnerSet.add(fle.getId());
             }
         }
-        return learnerSet;
+        return ImmutablePair.of(leaderSid, learnerSet);
     }
 
     /**

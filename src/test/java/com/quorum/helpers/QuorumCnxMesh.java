@@ -29,6 +29,11 @@ public interface QuorumCnxMesh {
     int size();
 
     /**
+     * Everyone is connect to everyone.
+     */
+    void connectAll();
+
+    /**
      * Disconnect all from this sid.
      * @param sid
      */

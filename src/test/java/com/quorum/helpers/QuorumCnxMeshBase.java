@@ -45,6 +45,16 @@ public class QuorumCnxMeshBase implements QuorumCnxMesh {
     }
 
     @Override
+    public void connectAll() {
+        synchronized (this) {
+            for (final BitSet bitSet : meshBitSet.values()) {
+                bitSet.clear();
+                bitSet.flip(1, this.quorumSize+1);
+            }
+        }
+    }
+
+    @Override
     public void disconnectAll(final long sid) {
         synchronized (this) {
             if (!meshBitSet.containsKey(sid)) {
@@ -71,9 +81,7 @@ public class QuorumCnxMeshBase implements QuorumCnxMesh {
                 throw new IllegalArgumentException(errStr);
             }
             for (final long targetSid : meshBitSet.keySet()) {
-                if (sid != targetSid) {
-                    connect(sid, targetSid);
-                }
+                connect(sid, targetSid);
             }
         }
     }
