@@ -39,4 +39,8 @@ public class QuorumBcastWithCnxMesh extends com.quorum.netty.QuorumBroadcast {
                 keepAliveCount, sslEnabled);
         this.quorumCnxMesh = quorumCnxMesh;
     }
+
+    public boolean isConnected(final long sid) {
+        return quorumCnxMesh.connected(this.sid(), sid);
+    }
 }

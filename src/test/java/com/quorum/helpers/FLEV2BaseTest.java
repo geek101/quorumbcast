@@ -19,6 +19,8 @@ import com.quorum.ElectionException;
 import com.quorum.QuorumServer;
 import com.quorum.netty.BaseTest;
 import org.apache.commons.lang3.tuple.ImmutablePair;
+import org.junit.runner.RunWith;
+import org.junit.runners.Parameterized;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -111,7 +113,8 @@ public class FLEV2BaseTest extends BaseTest {
                                 movedEnsemble.getFleToRun().getId(),
                                 movedEnsemble.getFleToRun().getState()))
                 + "] -> " + doneEnsemble + ", leader: "
-                + doneEnsemble.getLeaderLoopResult().values()
-                .iterator().next().getLeader());
+                + (doneEnsemble.getLeaderLoopResult().values().isEmpty() ?
+                    " NONE" : doneEnsemble.getLeaderLoopResult().values()
+                .iterator().next().getLeader()));
     }
 }

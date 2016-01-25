@@ -51,12 +51,18 @@ public class MockFLEV2Wrapper extends AbstractFLEV2Wrapper {
                         getQuorumVerifier(), votes, LOG);
         flev2Round.lookForLeader();
 
+        lastLookForLeader = flev2Round;
+
         // Update our vote if leader is non null
         if (flev2Round.getLeaderVote() != null) {
+            suggestedForTermination = flev2Round;
             updateSelfVote(catchUpToLeaderBeforeExitAndUpdate(
                     flev2Round.getLeaderVote(),
                     getSelfVote())).get();
         }
+
+        setVotesInRun(votes);
+
         return ImmutablePair.of(flev2Round.getLeaderVote(), flev2Round
                 .getVoteMap().values());
     }

@@ -9,12 +9,16 @@ import com.quorum.flexible.QuorumVerifier;
 import org.apache.commons.lang3.tuple.ImmutablePair;
 
 import java.util.Collection;
+import java.util.Map;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.Future;
 import java.util.concurrent.TimeUnit;
 
 import static com.quorum.QuorumPeer.LearnerType;
 import static com.quorum.QuorumPeer.ServerState;
+import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.assertNotEquals;
+import static org.junit.Assert.assertTrue;
 
 public abstract class AbstractFLEV2Wrapper extends FastLeaderElectionV2
 implements FLEV2Wrapper {
@@ -32,14 +36,17 @@ implements FLEV2Wrapper {
         this.voteViewChange = voteViewChange;
     }
 
+    @Override
     public Vote getSelfVote() {
         return voteViewChange.getSelfVote();
     }
 
+    @Override
     public ServerState getState() {
         return voteViewChange.getSelfVote().getState();
     }
 
+    @Override
     public Future<Void> updateSelfVote(final Vote vote) {
         try {
             return voteViewChange.updateSelfVote(vote);
@@ -48,8 +55,18 @@ implements FLEV2Wrapper {
         }
     }
 
-    public void breakFromLeader() {
-        updateSelfVote(getSelfVote().breakFromLeader());
+    @Override
+    public void waitForVotesRun(final Map<Long, Vote> voteMap)
+            throws InterruptedException, ExecutionException {
+        super.waitForVotesRun(voteMap);
+    }
+
+    @Override
+    public void verifyNonTermination() {
+        assertNotEquals("non terminating did run sid: " + getId(),
+                null, getLastLookForLeader());
+        assertEquals("non terminating never tried stability run sid: "
+                + getId(), null, couldTerminate());
     }
 
     @Override

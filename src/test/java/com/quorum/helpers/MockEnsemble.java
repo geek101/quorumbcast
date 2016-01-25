@@ -25,6 +25,7 @@ import org.slf4j.LoggerFactory;
 
 import java.util.ArrayList;
 import java.util.Collection;
+import java.util.HashMap;
 import java.util.List;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.Future;
@@ -159,6 +160,9 @@ public class MockEnsemble extends AbstractEnsemble {
                 fleThatRan.runLeaderElection(getVotes())));
 
         long electedLeaderSid = Long.MIN_VALUE;
+        if (lookingResultVotes == null) {
+            lookingResultVotes = new HashMap<>();
+        }
         for (final ImmutablePair<Long, Future<Vote>> pair : runOnceVotes) {
             final Vote v = pair.getRight().get();
             if (v != null && v.getSid() == pair.getLeft() &&

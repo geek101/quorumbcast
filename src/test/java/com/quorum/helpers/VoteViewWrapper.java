@@ -16,16 +16,23 @@
 package com.quorum.helpers;
 
 import com.quorum.QuorumBroadcast;
+import com.quorum.Vote;
 import com.quorum.VoteView;
+import com.sun.xml.internal.ws.policy.privateutil.PolicyUtils;
+import com.sun.xml.internal.ws.util.CompletedFuture;
 import io.netty.channel.EventLoopGroup;
 
 import java.net.InetSocketAddress;
+import java.util.Collections;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.Future;
 
 /**
  * Do not add any methods or override any methods from base class. We
  * need to test the base class as is except for this.
  */
 public class VoteViewWrapper extends VoteView {
+    private final QuorumBcastWithCnxMesh quorumBcastWithCnxMesh;
     /**
      * Used for testing.
      * @param mySid
@@ -37,5 +44,20 @@ public class VoteViewWrapper extends VoteView {
                               final EventLoopGroup eventLoopGroup,
                               final QuorumBroadcast quorumBroadcast) {
         super(mySid, electionAddr, eventLoopGroup, quorumBroadcast);
+        if (!(quorumBroadcast instanceof QuorumBcastWithCnxMesh)) {
+            throw new RuntimeException("invalid type for quorumBroadcast"
+                    + ", expected QuorumBcastWithCnxMesh, got: "
+                    + quorumBroadcast.getClass().getName());
+        }
+        quorumBcastWithCnxMesh = (QuorumBcastWithCnxMesh)quorumBroadcast;
+    }
+
+    @Override
+    public Future<Void> msgRx(final Vote vote) {
+        if (quorumBcastWithCnxMesh.isConnected(vote.getSid())) {
+            return super.msgRx(vote);
+        }
+
+        return CompletableFuture.completedFuture(null);
     }
 }

@@ -560,11 +560,11 @@ public class Vote {
     public Vote makeMeLooker(final Vote totalOrderVote, final Random random) {
         final long newZxid = totalOrderVote != null ?
                 randomLong(random, totalOrderVote.getZxid())
-                : randomLong(random);
+                : 0x1111L;
 
         final long newPeerEpoch = totalOrderVote != null ?
                 randomLong(random, totalOrderVote.getPeerEpoch())
-                : randomLong(random);
+                : 0x1111L;
 
         return new Vote(this.getVersion(), this.getSid(),
                 // upto but not higher than leader's Zxid

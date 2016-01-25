@@ -57,7 +57,7 @@ public class FLEV2CombValidLeaderElectTest extends FLEV2BaseTest {
                 { "quorumbcast", 3, 150, 150, 250, 50, 3,
                         TimeUnit.MILLISECONDS},
                 { "quorumbcast-ssl", 3, 350, 350, 550, 50, 7,
-                        TimeUnit.MILLISECONDS}
+                        TimeUnit.MILLISECONDS},
         });
     }
 

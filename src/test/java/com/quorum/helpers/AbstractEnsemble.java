@@ -73,7 +73,11 @@ public abstract class AbstractEnsemble implements Ensemble {
     private FLEV2Wrapper fleToRun;  /// Which node is set to run
     protected ConcurrentHashMap<Long, Future<Vote>> futuresForLookingPeers
             = new ConcurrentHashMap<>();
-    protected HashMap<Long, Vote> lookingResultVotes = new HashMap<>();
+    final HashMap<Long, Future<Vote>> terminatingFuturesMap
+            = new HashMap<>();
+    final HashMap<Long, Future<Vote>> nonTerminatingFuturesMap
+            = new HashMap<>();
+    protected HashMap<Long, Vote> lookingResultVotes = null;
     private boolean runLookingDone = false;
     private Long safetyPred;
 
@@ -157,22 +161,6 @@ public abstract class AbstractEnsemble implements Ensemble {
         this.quorumCnxMesh = quorumCnxMeshArg;
         this.flatQuorumWithState = flatQuorumWithState;
         this.partitionedQuorum = partitionedQuorumArg;
-        this.LOG = new LogPrefix(LOGS, toString());
-    }
-
-    protected AbstractEnsemble(final Ensemble parentEnsemble,
-
-                               final int stableTimeout,
-                               final TimeUnit stableTimeoutUnit) {
-        this(((AbstractEnsemble)parentEnsemble).getId() + 1,
-                parentEnsemble.getQuorumSize(),
-                ((AbstractEnsemble)parentEnsemble).getQuorumVerifier(),
-                ((AbstractEnsemble)parentEnsemble).getState(),
-                parentEnsemble, stableTimeout, stableTimeoutUnit);
-        this.fles = ((AbstractEnsemble)parentEnsemble).fles;
-        this.quorumCnxMesh = parentEnsemble.getQuorumCnxMesh();
-        this.partitionedQuorum = ((AbstractEnsemble) parentEnsemble)
-                .partitionedQuorum;
         this.LOG = new LogPrefix(LOGS, toString());
     }
 
@@ -267,18 +255,38 @@ public abstract class AbstractEnsemble implements Ensemble {
             throws InterruptedException, ExecutionException;
 
     /**
-     * If all are looking then any one can be leader but everyone
-     * should agree on it regardless. Otherwise existing LEADER must
+     * For looking which are in partition in Quorum must elect a leader but
+     * everyone should agree on it regardless. Otherwise existing LEADER must
      * be elected.
-     * @return
+     * For looking which are in partition with no Quorum will not terminate,
+     * verify that.
+     * New leader and terminating followers should never violate safety, i.e
+     * should have better peerEpoch what we had before leader election is run.
      */
     @Override
     public void verifyLeaderAfterShutDown()
             throws InterruptedException, ExecutionException {
+        waitForEnsembleToRun();
+
+
+        // This gets results from terminating set.
         final HashMap<Long, Vote> resultVotes = getLeaderLoopResult();
+
+        // Verify before shutdown non of the non terminating results finish.
+        for (final Map.Entry<Long, Future<Vote>> f : nonTerminatingFuturesMap
+                .entrySet()) {
+            assertTrue("non terminating sid: " + f.getKey(),
+                    !f.getValue().isDone());
+            fles.get(f.getKey()).verifyNonTermination();
+        }
 
         // Above will wait for leader elections to finish.
         shutdown().get();
+
+        // If none are terminating runs then exit here.
+        if (resultVotes.isEmpty()) {
+            return;
+        }
 
         final HashMap<Long, HashSet<Long>> leaderQuorumMap = new HashMap<>();
 
@@ -288,14 +296,15 @@ public abstract class AbstractEnsemble implements Ensemble {
                         new HashSet<>(
                         Collections.singletonList(fle.getId())));
             } else {
-                leaderQuorumMap.get(fle.getSelfVote().getLeader()).add(fle.getId());
+                leaderQuorumMap.get(fle.getSelfVote().getLeader())
+                        .add(fle.getId());
             }
         }
 
-        verifyThisAsLeader(leaderQuorumMap);
+        verifyLeaderInQuorum(leaderQuorumMap);
     }
 
-    public void verifyThisAsLeader(
+    private void verifyLeaderInQuorum(
             final HashMap<Long, HashSet<Long>> leaderQuorumMap) {
         int max = Integer.MIN_VALUE;
         long secondBestLeaderSid = Integer.MIN_VALUE;
@@ -378,13 +387,19 @@ public abstract class AbstractEnsemble implements Ensemble {
     @Override
     public HashMap<Long, Vote> getLeaderLoopResult() {
         // if already called once return stored result.
-        if (!lookingResultVotes.isEmpty()) {
+        if (lookingResultVotes != null) {
             return lookingResultVotes;
         }
+
+        lookingResultVotes = new HashMap<>();
+
+        // Collect results to terminating and non terminating .
+        collectLeaderLoopResultFutures();
+
         // wait for everyone to finish before waiting the result of
         // the peer we are interested in.
         for (final Map.Entry<Long,
-                Future<Vote>> entry : futuresForLookingPeers.entrySet()) {
+                Future<Vote>> entry : terminatingFuturesMap.entrySet()) {
             try {
                 lookingResultVotes.put(entry.getKey(),
                         entry.getValue().get());
@@ -394,6 +409,80 @@ public abstract class AbstractEnsemble implements Ensemble {
             }
         }
         return lookingResultVotes;
+    }
+
+    /**
+     * Algo: go through each partition, if partition has enough members i.e
+     * (n/2 + 1) then all looking members there must terminate.
+     */
+    private void collectLeaderLoopResultFutures() {
+        final HashMap<Long, Integer> fleVisibleCountMap
+                = new HashMap<>();
+        for (final Collection<ImmutablePair<Long, QuorumPeer
+                .ServerState>> partition : partitionedQuorum) {
+            for (final ImmutablePair<Long, QuorumPeer.ServerState> pair :
+                    partition) {
+                if (!fleVisibleCountMap.containsKey(pair.getKey())) {
+                    fleVisibleCountMap.put(pair.getKey(), partition.size());
+                } else {
+                    fleVisibleCountMap.put(pair.getKey(),
+                            fleVisibleCountMap.get(pair.getKey())
+                                    + partition.size());
+                }
+            }
+        }
+
+        for (final Map.Entry<Long, Integer> e : fleVisibleCountMap.entrySet()) {
+            HashMap<Long, Future<Vote>> resultMap =
+                    nonTerminatingFuturesMap;
+            if (e.getValue() >= ((quorumSize / 2) + 1)) {
+                 resultMap = terminatingFuturesMap;
+            }
+
+            if (futuresForLookingPeers.get(e.getKey()) != null) {
+                resultMap.put(e.getKey(),
+                        futuresForLookingPeers.get(e.getKey()));
+            }
+        }
+    }
+
+    /**
+     * Wait for each partition to run leader election with votes from
+     * all of its peers in that partition.
+     * TODO: Improve to make sure all round are run!?.
+     * @throws InterruptedException
+     * @throws ExecutionException
+     */
+    private void waitForEnsembleToRun() throws InterruptedException,
+            ExecutionException {
+        final HashMap<Long, HashMap<Long, Vote>> fleVisibleVoteMap
+                = new HashMap<>();
+        for (final Collection<ImmutablePair<Long,
+                QuorumPeer.ServerState>> partition : partitionedQuorum) {
+            final HashMap<Long, Vote> partitionVotes = new HashMap<>();
+            for (final ImmutablePair<Long, QuorumPeer.ServerState> p
+                    : partition) {
+                final FLEV2Wrapper fle = fles.get(p.getLeft());
+                partitionVotes.put(fle.getId(), fle.getSelfVote());
+            }
+
+            for (final ImmutablePair<Long, QuorumPeer.ServerState> p
+                    : partition) {
+                if (!fleVisibleVoteMap.containsKey(p.getLeft())) {
+                    final HashMap<Long, Vote> pv = new HashMap<>();
+                    pv.putAll(partitionVotes);
+                    fleVisibleVoteMap.put(p.getLeft(), pv);
+                } else {
+                    fleVisibleVoteMap.get(p.getLeft())
+                            .putAll(partitionVotes);
+                }
+            }
+        }
+
+        for (final Long sid : futuresForLookingPeers.keySet()) {
+            LOG.warn("waiting for vote run for fle: " + sid);
+            fles.get(sid).waitForVotesRun(fleVisibleVoteMap.get(sid));
+        }
     }
 
     @Override
@@ -659,8 +748,9 @@ public abstract class AbstractEnsemble implements Ensemble {
             final AbstractEnsemble ensemble) throws ElectionException,
             InterruptedException, ExecutionException {
         final AbstractEnsemble childEnsemble
-                = (AbstractEnsemble)createEnsemble(ensemble, this
-                .quorumCnxMesh, null, this.partitionedQuorum);
+                = (AbstractEnsemble)createEnsemble(ensemble,
+                this.quorumCnxMesh, this.flatQuorumWithState,
+                this.partitionedQuorum);
         childEnsemble.copyFromParent();
         return childEnsemble;
     }

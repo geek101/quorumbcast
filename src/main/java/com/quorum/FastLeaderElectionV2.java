@@ -29,9 +29,11 @@ import java.util.HashMap;
 import java.util.HashSet;
 import java.util.Map;
 import java.util.Random;
+import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.Future;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicReference;
 
 public class FastLeaderElectionV2 implements Election {
     private static final Logger LOGS
@@ -45,6 +47,11 @@ public class FastLeaderElectionV2 implements Election {
     private final int stableTimeout;
     private final TimeUnit stableTimeoutUnit;
     protected LogPrefix LOG = null;
+    protected AtomicReference<CompletableFuture<Collection<Vote>>>
+            waitForLookRunFuture
+            = new AtomicReference<>();
+    protected FastLeaderElectionV2Round lastLookForLeader = null;
+    protected FastLeaderElectionV2Round suggestedForTermination = null;
     private final Random random = new Random();
 
     public FastLeaderElectionV2(
@@ -64,6 +71,7 @@ public class FastLeaderElectionV2 implements Election {
         this.LOG = new LogPrefix(LOGS, "mySid:" + this.mySid +
                 "-electionEpoch:0");
         this.random.setSeed(System.nanoTime() ^ this.mySid);
+        waitForLookRunFuture.set(CompletableFuture.completedFuture(null));
     }
 
     /**
@@ -216,10 +224,14 @@ public class FastLeaderElectionV2 implements Election {
                 continue;
             }
 
+
+
             final FastLeaderElectionV2Round flev2Round =
                     new FastLeaderElectionV2Round(getId(),
                             getQuorumVerifier(), votes, LOG);
             flev2Round.lookForLeader();
+
+            lastLookForLeader = flev2Round;
 
             // Lets update our election epoch if it did get borrowed from
             // someone else, speeds up things since we are going into
@@ -228,6 +240,7 @@ public class FastLeaderElectionV2 implements Election {
 
             if (flev2Round.foundLeaderWithQuorum()) {
                 // If there is quorum for a leader then try stability check
+                suggestedForTermination = flev2Round;
                 final LeaderStabilityPredicate leaderStabilityPredicate
                         = getLeaderStabilityPredicate(flev2Round);
 
@@ -242,10 +255,16 @@ public class FastLeaderElectionV2 implements Election {
                             leaderStabilityPredicate.getFleV2Round());
                     votes = leaderStabilityPredicate.getFleV2Round()
                             .getVoteMap().values();
+                    // Used for testing, helps with waiting till all Votes were
+                    // considered.
+                    // Terminate the unterminated on.
+                    setVotesInRun(votes);
                     continue;
                 }
 
                 // stability passed, exit this instance of run.
+                setVotesInRun(leaderStabilityPredicate.getFleV2Round()
+                        .getVoteMap().values());
                 final Vote selfFinalVote
                         = catchUpToLeaderBeforeExitAndUpdate(
                         leaderStabilityPredicate.getFleV2Round()
@@ -257,6 +276,12 @@ public class FastLeaderElectionV2 implements Election {
             }
 
             final Vote v = updateSelfFromFleV2Round(flev2Round);
+
+            // Used for testing, helps with waiting till all Votes were
+            // considered.
+            // Terminate the unterminated on.
+            setVotesInRun(votes);
+
             votes = flev2Round.getVoteMap().values();
             LOG.resetPrefix("mySid:" + getId() + "-electionEpoch:"
                     + v.getElectionEpoch());
@@ -408,5 +433,65 @@ public class FastLeaderElectionV2 implements Election {
 
     protected TimeUnit getStableTimeUnit() {
         return this.stableTimeoutUnit;
+    }
+
+    protected FastLeaderElectionV2Round couldTerminate() {
+        return suggestedForTermination;
+    }
+
+    protected FastLeaderElectionV2Round getLastLookForLeader() {
+        return lastLookForLeader;
+    }
+
+    protected void setVotesInRun(final Collection<Vote> votes) {
+        // Used for testing, helps with waiting till all Votes were
+        // considered.
+        // Terminate the unterminated on.
+        final CompletableFuture<Collection<Vote>> lastVotesFuture =
+                new CompletableFuture<>();
+        lastVotesFuture.complete(Collections.unmodifiableCollection(votes));
+        waitForLookRunFuture.set(lastVotesFuture);
+    }
+
+    /**
+     * Used for testing, we need to only exit after given votes were
+     * considered for a run.
+     * @param voteMap given votes much match what were processed in the run.
+     * @throws InterruptedException
+     * @throws ExecutionException
+     */
+    protected void waitForVotesRun(final Map<Long, Vote> voteMap)
+            throws InterruptedException, ExecutionException {
+        LOG.warn("entering wait for votes run count: " + voteMap.size());
+        while(true) {
+            final Collection<Vote> votesInRun
+                    = waitForLookRunFuture.get().get();
+            if (votesInRun == null || voteMap.size() != votesInRun.size()) {
+                if (votesInRun != null) {
+                    final String errStr = "wait for votes non success count: "
+                            + votesInRun.size() + ", expected: "
+                            + voteMap.size();
+                    if (votesInRun.size() > voteMap.size()) {
+                        throw new RuntimeException(errStr);
+                    }
+                }
+                continue;
+            }
+
+            boolean missedAVote = false;
+            for (final Vote v : votesInRun) {
+                // TODO: can we match the entire Vote?, but
+                // since vote is update it is hard to do
+                // from outside?. May be not?.
+                if (!voteMap.containsKey(v.getSid())) {
+                    missedAVote = true;
+                    break;
+                }
+            }
+
+            if (!missedAVote) {
+                return;
+            }
+        }
     }
 }
