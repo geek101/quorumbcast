@@ -99,7 +99,8 @@ public class MockEnsemble extends AbstractEnsemble {
         fleThatRan = fles.get(sid);
 
         // bump up election epoch for the peer for which we need to run looking
-        final Vote runVote = fleThatRan.getSelfVote().increaseElectionEpoch();
+
+        final Vote runVote = fleThatRan.getSelfVote(); //.increaseElectionEpoch();
         fleThatRan.updateSelfVote(runVote).get();
 
         // bump rest of the peers election epoch to match so one run

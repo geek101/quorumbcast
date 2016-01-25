@@ -398,14 +398,54 @@ public abstract class AbstractEnsemble implements Ensemble {
 
         // wait for everyone to finish before waiting the result of
         // the peer we are interested in.
+        long leaderSid = Long.MIN_VALUE;
         for (final Map.Entry<Long,
                 Future<Vote>> entry : terminatingFuturesMap.entrySet()) {
             try {
+                final Vote doneVote = entry.getValue().get();
+                if (doneVote.getState() == QuorumPeer.ServerState.LEADING) {
+                    leaderSid = doneVote.getSid();
+                }
                 lookingResultVotes.put(entry.getKey(),
                         entry.getValue().get());
             } catch (InterruptedException | ExecutionException exp) {
                 LOG.error("failed to wait for result of rest of the peers");
                 throw new RuntimeException(exp);
+            }
+        }
+
+
+        for (final Collection<ImmutablePair<Long, QuorumPeer
+                .ServerState>> partition : partitionedQuorum) {
+            boolean leader = false;
+            for (final ImmutablePair<Long, QuorumPeer.ServerState> pair :
+                    partition) {
+                if (pair.getLeft() == leaderSid ||
+                        pair.getRight() == QuorumPeer.ServerState.LEADING) {
+                    leader = true;
+                    break;
+                }
+            }
+
+            if (!leader) {
+                continue;
+            }
+
+            // This partition has leader, non terminating becomes terminating.
+            for (final ImmutablePair<Long, QuorumPeer.ServerState> pair :
+                    partition) {
+                if (nonTerminatingFuturesMap.containsKey(pair.getKey())) {
+                    try {
+                        lookingResultVotes.put(pair.getKey(),
+                                nonTerminatingFuturesMap.get(pair.getKey())
+                                        .get());
+                    } catch (InterruptedException | ExecutionException exp) {
+                        LOG.error("failed to wait for result of " +
+                                "rest of the peers");
+                        throw new RuntimeException(exp);
+                    }
+                    nonTerminatingFuturesMap.remove(pair.getKey());
+                }
             }
         }
         return lookingResultVotes;
@@ -416,23 +456,8 @@ public abstract class AbstractEnsemble implements Ensemble {
      * (n/2 + 1) then all looking members there must terminate.
      */
     private void collectLeaderLoopResultFutures() {
-        final HashMap<Long, Integer> fleVisibleCountMap
-                = new HashMap<>();
-        for (final Collection<ImmutablePair<Long, QuorumPeer
-                .ServerState>> partition : partitionedQuorum) {
-            for (final ImmutablePair<Long, QuorumPeer.ServerState> pair :
-                    partition) {
-                if (!fleVisibleCountMap.containsKey(pair.getKey())) {
-                    fleVisibleCountMap.put(pair.getKey(), partition.size());
-                } else {
-                    fleVisibleCountMap.put(pair.getKey(),
-                            fleVisibleCountMap.get(pair.getKey())
-                                    + partition.size());
-                }
-            }
-        }
-
-        for (final Map.Entry<Long, Integer> e : fleVisibleCountMap.entrySet()) {
+        for (final Map.Entry<Long, Integer> e
+                : getFleVisibleCountMap().entrySet()) {
             HashMap<Long, Future<Vote>> resultMap =
                     nonTerminatingFuturesMap;
             if (e.getValue() >= ((quorumSize / 2) + 1)) {
@@ -444,6 +469,30 @@ public abstract class AbstractEnsemble implements Ensemble {
                         futuresForLookingPeers.get(e.getKey()));
             }
         }
+    }
+
+    private HashMap<Long, Integer> getFleVisibleCountMap() {
+        final HashMap<Long, Integer> fleVisibleCountMap
+                = new HashMap<>();
+        for (final Collection<ImmutablePair<Long, QuorumPeer
+                .ServerState>> partition : partitionedQuorum) {
+            for (final ImmutablePair<Long, QuorumPeer.ServerState> pair :
+                    partition) {
+                if (!fleVisibleCountMap.containsKey(pair.getKey())) {
+                    fleVisibleCountMap.put(pair.getKey(), partition.size()-1);
+                } else {
+                    fleVisibleCountMap.put(pair.getKey(),
+                            fleVisibleCountMap.get(pair.getKey())
+                                    + partition.size()-1);
+                }
+            }
+        }
+
+        for (final Map.Entry<Long, Integer> e : fleVisibleCountMap.entrySet()) {
+            e.setValue(e.getValue()+1);
+        }
+
+        return fleVisibleCountMap;
     }
 
     /**
@@ -845,10 +894,14 @@ public abstract class AbstractEnsemble implements Ensemble {
             return ImmutablePair.of(new HashMap<>(), null);
         }
 
+        final HashMap<Long, Integer> fleVisibleCountMap =
+                getFleVisibleCountMap();
         final Map<Long, Vote> voteMap = new HashMap<>();
         final Vote leaderVote = createVoteWithState(pair.getLeft(),
                 QuorumPeer.ServerState.LEADING).makeMeLeader(random);
-        voteMap.put(leaderVote.getSid(), leaderVote);
+        voteMap.put(leaderVote.getSid(),
+                leaderVote.setElectionEpoch(
+                        fleVisibleCountMap.get(leaderVote.getSid())));
 
         Vote minZxidVote = null;
         for (final long sid : pair.getRight()) {
@@ -859,7 +912,9 @@ public abstract class AbstractEnsemble implements Ensemble {
             final Vote followerVote
                     = createVoteWithState(sid, QuorumPeer.ServerState.FOLLOWING)
                     .makeMeFollower(leaderVote, random);
-            voteMap.put(followerVote.getSid(), followerVote);
+
+            voteMap.put(followerVote.getSid(), followerVote.setElectionEpoch(
+                    fleVisibleCountMap.get(followerVote.getSid())));
             if (minZxidVote == null ||
                     minZxidVote.getZxid() > followerVote.getZxid()) {
                 minZxidVote = followerVote;

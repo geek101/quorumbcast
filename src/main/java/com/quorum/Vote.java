@@ -443,19 +443,21 @@ public class Vote {
         final long leaderSid = this.getLeader() <= 0 ? this.getSid() : this
                 .getLeader();
         return new Vote(this.getVersion(), leaderSid, zxid,
-                increasedElectionEpoch, peerEpoch, this.getSid(),
+                1L, peerEpoch, this.getSid(),
                 QuorumPeer.ServerState.LOOKING);
     }
+
     /**
      * Used by leader election to  increase electionEpoch of other Vote.
      *
      * @return new Vote
-     */
+
     public Vote increaseElectionEpoch() {
         return new Vote(this.getVersion(), this.getLeader(), this.getZxid(),
                 this.getElectionEpoch() + 1, this.getPeerEpoch(), this.getSid(),
                 this.getState());
     }
+     */
 
     /**
      * Used by leader election to logicalClock of other Vote.
@@ -466,6 +468,12 @@ public class Vote {
     public Vote setElectionEpoch(final Vote other) {
         return new Vote(this.getVersion(), this.getLeader(), this.getZxid(),
                 other.getElectionEpoch(), this.getPeerEpoch(), this.getSid(),
+                this.getState());
+    }
+
+    public Vote setElectionEpoch(final long visibleQuorumVoteCount) {
+        return new Vote(this.getVersion(), this.getLeader(), this.getZxid(),
+                visibleQuorumVoteCount, this.getPeerEpoch(), this.getSid(),
                 this.getState());
     }
 
@@ -484,7 +492,7 @@ public class Vote {
     public Vote catchUpToLeaderVote(final Vote leader,
                                     final QuorumPeer.ServerState serverState) {
         return new Vote(this.getVersion(), leader.getLeader(), leader.getZxid(),
-                leader.getElectionEpoch(), leader.getPeerEpoch(), this.getSid(),
+                this.getElectionEpoch(), leader.getPeerEpoch(), this.getSid(),
                 serverState);
     }
     public Vote setSelfAsLeader() {
@@ -518,7 +526,7 @@ public class Vote {
      */
     public static Vote quorumPeerVoteSet(final Vote other, final long sid) {
         return new Vote(other.getVersion(), other.getLeader(), other.getZxid(),
-                other.getElectionEpoch(), other.getPeerEpoch(), sid,
+                1L, other.getPeerEpoch(), sid,
                 other.getState());
     }
 
@@ -530,7 +538,7 @@ public class Vote {
     public Vote makeMeLeader(final Random random) {
         return new Vote(this.getVersion(), this.getSid(),
                 randomLong(random),
-                randomLong(random),
+                1L,
                 randomLong(random), this.getSid(),
                 QuorumPeer.ServerState.LEADING);
     }
@@ -545,7 +553,7 @@ public class Vote {
     public Vote makeMeFollower(final Vote leaderVote, final Random random) {
         return new Vote(this.getVersion(), leaderVote.getLeader(),
                 randomLong(random,leaderVote.getZxid()),
-                leaderVote.getElectionEpoch(),
+                1L,
                 leaderVote.getPeerEpoch(), this.getSid(),
                 QuorumPeer.ServerState.FOLLOWING);
     }
@@ -570,7 +578,7 @@ public class Vote {
                 // upto but not higher than leader's Zxid
                 newZxid,
                 // TODO: duh! deal with this later!!!!.
-                randomLong(random),
+                1L,
                 // upto but not higher than leader's peerEpoch
                 newPeerEpoch,
                 this.getSid(), QuorumPeer.ServerState.LOOKING);

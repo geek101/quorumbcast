@@ -194,6 +194,9 @@ public abstract class VotingChannel extends NettyChannel<Long> {
                             "Invalid message received, closing channel");
                 }
 
+                /**
+                 * TODO: Use this
+                 */
                 if (voteRcv == null ||
                         !vote.match(voteRcv)) {
                     msgRxCb.call(vote);

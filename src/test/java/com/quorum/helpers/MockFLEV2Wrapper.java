@@ -56,9 +56,10 @@ public class MockFLEV2Wrapper extends AbstractFLEV2Wrapper {
         // Update our vote if leader is non null
         if (flev2Round.getLeaderVote() != null) {
             suggestedForTermination = flev2Round;
-            updateSelfVote(catchUpToLeaderBeforeExitAndUpdate(
-                    flev2Round.getLeaderVote(),
-                    getSelfVote())).get();
+            final Vote finalSelfVote
+                    = catchUpToLeaderBeforeExitAndUpdate(flev2Round);
+            assert finalSelfVote != null;
+            updateSelfVote(finalSelfVote).get();
         }
 
         setVotesInRun(votes);

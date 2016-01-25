@@ -23,6 +23,7 @@ import com.quorum.util.Predicate;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import java.util.ArrayList;
 import java.util.Collection;
 import java.util.Collections;
 import java.util.HashMap;
@@ -224,8 +225,6 @@ public class FastLeaderElectionV2 implements Election {
                 continue;
             }
 
-
-
             final FastLeaderElectionV2Round flev2Round =
                     new FastLeaderElectionV2Round(getId(),
                             getQuorumVerifier(), votes, LOG);
@@ -267,9 +266,15 @@ public class FastLeaderElectionV2 implements Election {
                         .getVoteMap().values());
                 final Vote selfFinalVote
                         = catchUpToLeaderBeforeExitAndUpdate(
-                        leaderStabilityPredicate.getFleV2Round()
-                                .getLeaderVote(),
-                        leaderStabilityPredicate.getFleV2Round().getSelfVote());
+                        leaderStabilityPredicate.getFleV2Round());
+
+                if (selfFinalVote == null) {
+                    updateSelfFromFleV2Round(
+                            leaderStabilityPredicate.getFleV2Round());
+                    votes = leaderStabilityPredicate.getFleV2Round()
+                            .getVoteMap().values();
+                    continue;
+                }
                 leaveInstance(selfFinalVote);
                 voteViewConsumerCtrl.removeConsumer(consumer);
                 return selfFinalVote;
@@ -345,13 +350,27 @@ public class FastLeaderElectionV2 implements Election {
                 leaderStabilityPredicate);
     }
 
-    protected Vote catchUpToLeaderBeforeExitAndUpdate(final Vote leaderVote,
-                                                      final Vote selfVote)
+    protected Vote catchUpToLeaderBeforeExitAndUpdate(
+            final FastLeaderElectionV2Round fleV2Round)
             throws InterruptedException, ExecutionException {
+        final Vote leaderVote = fleV2Round.getLeaderVote();
+        final Vote selfVote = fleV2Round.getSelfVote();
         // We are done, catch up to leader vote and break the loop.
         QuorumPeer.ServerState targetState
                 = (leaderVote.getLeader() == getId()) ?
                 QuorumPeer.ServerState.LEADING : learningState();
+
+        if (targetState == QuorumPeer.ServerState.LEADING) {
+            // cool, we want to be leader, but only if enough follow us.
+            if (!quorumVerifier.containsQuorum(fleV2Round.getLeaderQuorum())) {
+                return null;
+            }
+        } else {
+            // if we are follower then leader should be leader by now!.
+            if (!leaderVote.isLeader()) {
+                return null;
+            }
+        }
 
         final Vote finalVote = selfVote.
                 catchUpToLeaderVote(leaderVote, targetState);
@@ -444,12 +463,16 @@ public class FastLeaderElectionV2 implements Election {
     }
 
     protected void setVotesInRun(final Collection<Vote> votes) {
+        final Collection<Vote> copyVotes = new ArrayList<>();
+        for (final Vote v : votes) {
+            copyVotes.add(v);
+        }
         // Used for testing, helps with waiting till all Votes were
         // considered.
         // Terminate the unterminated on.
         final CompletableFuture<Collection<Vote>> lastVotesFuture =
                 new CompletableFuture<>();
-        lastVotesFuture.complete(Collections.unmodifiableCollection(votes));
+        lastVotesFuture.complete(Collections.unmodifiableCollection(copyVotes));
         waitForLookRunFuture.set(lastVotesFuture);
     }
 

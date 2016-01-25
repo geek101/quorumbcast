@@ -36,7 +36,12 @@ public class QuorumMajWrapper implements QuorumVerifier {
     /**
      * Verifies if a set is a majority.
      */
-    public boolean containsQuorum(HashSet<Long> set){
-        return (set.size() > half);
+    public boolean containsQuorum(final HashSet<Long> set){
+        return set.size() > half;
+    }
+
+    @Override
+    public boolean containsQuorumFromCount(final long quorumCount) {
+        return quorumCount > half;
     }
 }

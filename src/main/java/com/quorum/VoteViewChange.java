@@ -31,31 +31,6 @@ public abstract class VoteViewChange implements VoteViewRead {
         return this.mySid;
     }
 
-    public void setServerState(final QuorumPeer.ServerState serverState)
-            throws InterruptedException, ExecutionException {
-        updateSelfVote(this.getSelfVote().setServerState(serverState));
-    }
-
-    public Future<Void> increaseElectionEpoch()
-            throws InterruptedException, ExecutionException {
-        return updateSelfVote(this.getSelfVote().increaseElectionEpoch());
-    }
-
-    public Future<Void> setElectionEpoch(final Vote other)
-            throws InterruptedException, ExecutionException {
-        return updateSelfVote(this.getSelfVote().setElectionEpoch(other));
-    }
-
-    public Future<Void> catchUpToVote(final Vote other)
-            throws InterruptedException, ExecutionException {
-        return updateSelfVote(this.getSelfVote().catchUpToVote(other));
-    }
-
-    public Future<Void> quorumPeerVoteSet(final Vote other, final long sid)
-            throws InterruptedException, ExecutionException {
-        return updateSelfVote(Vote.quorumPeerVoteSet(other, sid));
-    }
-
     public abstract Future<Void> updateSelfVote(final Vote vote)
             throws InterruptedException, ExecutionException;
 

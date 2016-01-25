@@ -130,7 +130,6 @@ public class FLEV2CombValidLeaderElectOneOffTest extends FLEV2BaseTest {
         verifyPrintHelper(parentEnsemble, movedEnsemble, doneEnsemble);
     }
 
-    @Ignore
     @Test
     public void testPartitionDoesNotWorkLeader() throws ElectionException,
             InterruptedException, ExecutionException {

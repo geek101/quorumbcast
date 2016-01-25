@@ -85,17 +85,24 @@ public class FastLeaderElectionV2Round {
 
     public boolean foundLeaderWithQuorum() {
         return leaderQuorum != null &&
-                quorumVerifier.containsQuorum(leaderQuorum);
+                (quorumVerifier.containsQuorum(leaderQuorum) ||
+                quorumVerifier.containsQuorumFromCount(
+                        leaderVote.getElectionEpoch()));
     }
 
     public void lookForLeader() {
-        selfVote = electionEpochRound(voteMap);
+        selfVote = electionEpochUpdate(voteMap);
 
         // put this new vote in the vote map.
         voteMap.put(getId(), selfVote);
 
         final ImmutablePair<Vote, HashSet<Long>> suggestedLeaderPair =
                 leaderSuggestionRound(voteMap);
+
+        if (suggestedLeaderPair.getLeft() != null &&
+                suggestedLeaderPair.getLeft().getSid() == getId()) {
+            voteMap.put(getId(), suggestedLeaderPair.getLeft());
+        }
 
         final Vote suggestedLeader = suggestedLeaderPair.getLeft();
         final HashSet<Long> suggestedLeaderQuorum
@@ -112,6 +119,7 @@ public class FastLeaderElectionV2Round {
      * @return Self vote updated if necessary. Will borrow the best election
      * epoch.
      */
+    @Deprecated
     protected Vote electionEpochRound(
             final HashMap<Long, Vote> voteMapArg) {
         // Try to set our Epoch and other fields using the LOOKING vote set.
@@ -128,7 +136,6 @@ public class FastLeaderElectionV2Round {
         }
 
         Vote bestEpochVote = voteMapArg.get(getId());
-        Vote bestTotalOrderPredVote = voteMapArg.get(getId());
 
         // Look for highest election epoch among the looking votes.
         for (final Vote vote : voteMapArg.values()) {
@@ -140,10 +147,6 @@ public class FastLeaderElectionV2Round {
             if (vote.getElectionEpoch() > bestEpochVote.getElectionEpoch()) {
                 bestEpochVote = vote;
             }
-
-            if (totalOrderPredicate(vote, bestTotalOrderPredVote)) {
-                bestTotalOrderPredVote = vote;
-            }
         }
 
         Vote selfVote = voteMapArg.get(getId());
@@ -152,6 +155,20 @@ public class FastLeaderElectionV2Round {
         }
 
         return selfVote;
+    }
+
+    /**
+     * Our election epoch reflects the number of peer votes we have seen.
+     * @param voteMapArg
+     * @return
+     */
+    protected Vote electionEpochUpdate(
+            final HashMap<Long, Vote> voteMapArg) {
+        if (voteMapArg.get(getId()).getElectionEpoch() != voteMapArg.size()) {
+            return voteMapArg.get(getId()).setElectionEpoch(voteMapArg.size());
+        }
+
+        return voteMapArg.get(getId());
     }
 
     /**
@@ -212,9 +229,30 @@ public class FastLeaderElectionV2Round {
 
         // If no available suggested leader picked then return null.
         if (leaderElectedVote == null) {
+            LOG.info("suggested leader null");
             return ImmutablePair.of(null, null);
         }
 
+        // If we see more votes then potential leader did at this point
+        // then let us try to be the leader.
+        if (!quorumVerifier.containsQuorum(leaderElectedCountPair.getRight()) &&
+                voteMap.get(getId()).getElectionEpoch()
+                        > leaderElectedVote.getElectionEpoch()) {
+            LOG.info("mySid: " + getId() + " , ElectionEpoch: "
+                    + voteMap.get(getId()).getElectionEpoch()
+                    + " better than: " + leaderElectedVote);
+            // Let us try to be leader.
+            Vote selfVote = voteMap.get(getId())
+                    .catchUpToVote(leaderElectedVote);
+            selfVote = selfVote.setSelfAsLeader();
+            final HashSet<Long> addSelfToQuorum
+                    = leaderElectedCountPair.getRight();
+            addSelfToQuorum.add(getId());
+            LOG.info("suggested self leader: " + selfVote);
+            return ImmutablePair.of(selfVote, addSelfToQuorum);
+        }
+
+        LOG.info("suggested leader: " + leaderElectedCountPair.getLeft());
         return leaderElectedCountPair;
     }
 
@@ -299,6 +337,9 @@ public class FastLeaderElectionV2Round {
     getLeaderByCount(final Map<Long, Vote> voteMap) {
         final HashMap<Long, VoteCountSet> voteToCountMap = new HashMap<>();
         // Look at each vote count reference for each valid leader.
+        long maxElectionEpoch = Long.MIN_VALUE;
+        final HashSet<Vote> maxElectionEpochSet = new HashSet<>();
+
         for (final Vote vote : voteMap.values()) {
             // Pick a leader only if it thinks its a leader or
             // I am the one picked as leader then its ok for me to be in
@@ -307,6 +348,20 @@ public class FastLeaderElectionV2Round {
                 continue;
             }
 
+            if (vote.getElectionEpoch() > maxElectionEpoch) {
+                maxElectionEpoch = vote.getElectionEpoch();
+                maxElectionEpochSet.clear();
+                maxElectionEpochSet.add(vote);
+                continue;
+            }
+
+            if (vote.getElectionEpoch() == maxElectionEpoch) {
+                maxElectionEpochSet.add(vote);
+            }
+        }
+
+        // Among the votes with highest election epoch ref count them.
+        for (final Vote vote : maxElectionEpochSet) {
             // get the leader's vote for the given vote.
             final Vote leaderForVote = voteMap.get(vote.getLeader());
             if (voteToCountMap.containsKey(leaderForVote.getSid())) {
@@ -315,6 +370,16 @@ public class FastLeaderElectionV2Round {
                 voteToCountMap.put(leaderForVote.getSid(),
                         new VoteCountSet(leaderForVote));
                 voteToCountMap.get(leaderForVote.getSid()).addVote(vote);
+            }
+        }
+
+        for (final Vote vote : voteMap.values()) {
+            if (!checkLeader(voteMap, vote)) {
+                continue;
+            }
+
+            if (voteToCountMap.containsKey(vote.getLeader())) {
+                voteToCountMap.get(vote.getLeader()).addVote(vote);
             }
         }
 
@@ -346,7 +411,12 @@ public class FastLeaderElectionV2Round {
             if ((leaderVote.getState() == QuorumPeer.ServerState.LEADING &&
                     bestLeaderVote.getState() !=
                             QuorumPeer.ServerState.LEADING) ||
-                    totalOrderPredicate(leaderVote, bestLeaderVote)) {
+                    leaderVote.getElectionEpoch()
+                            > bestLeaderVote.getElectionEpoch()
+                    ||
+                    (leaderVote.getElectionEpoch()
+                            == bestLeaderVote.getElectionEpoch() &&
+            totalOrderPredicate(leaderVote, bestLeaderVote))) {
                 bestTotalOrder = voteCountSet;
             }
         }
