@@ -506,7 +506,7 @@ public class Vote {
     }
 
     public boolean isLooker() {
-        return getState() == QuorumPeer.ServerState.FOLLOWING;
+        return getState() == QuorumPeer.ServerState.LOOKING;
     }
 
     public boolean isLeader() {

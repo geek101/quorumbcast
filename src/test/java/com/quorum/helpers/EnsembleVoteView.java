@@ -20,6 +20,8 @@ import com.quorum.ElectionException;
 import com.quorum.QuorumPeer;
 import com.quorum.QuorumServer;
 import com.quorum.Vote;
+import com.quorum.VoteViewChange;
+import com.quorum.VoteViewConsumerCtrl;
 import com.quorum.flexible.QuorumVerifier;
 import com.quorum.util.ChannelException;
 import com.quorum.util.LogPrefix;
@@ -59,7 +61,6 @@ public class EnsembleVoteView extends AbstractEnsemble {
     final String trustStoreLocation;
     final String trustStorePassword;
     final String trustStoreCAAlias;
-
 
     private final Map<Long, QuorumServer> serverMap;
 
@@ -187,15 +188,7 @@ public class EnsembleVoteView extends AbstractEnsemble {
         this.LOG = new LogPrefix(LOGS, toString());
     }
 
-    @Override
-    public Ensemble createEnsemble(
-            final Ensemble parentEnsemble,
-            final QuorumCnxMesh quorumCnxMeshArg,
-            final Collection<ImmutablePair<Long, QuorumPeer.ServerState>>
-                    flatQuorumWithState,
-            final Collection<Collection<ImmutablePair<Long,
-                    QuorumPeer.ServerState>>>
-                    partitionedQuorumArg) throws ElectionException {
+    protected List<QuorumServer> getServersForEnsemble() {
         List<QuorumServer> serversForEnsemble = servers;
         if (flatQuorumWithState != null) {
             serversForEnsemble = new ArrayList<>();
@@ -205,9 +198,23 @@ public class EnsembleVoteView extends AbstractEnsemble {
             }
         }
 
+        return serversForEnsemble;
+    }
+
+    @Override
+    public Ensemble createEnsemble(
+            final Ensemble parentEnsemble,
+            final QuorumCnxMesh quorumCnxMeshArg,
+            final Collection<ImmutablePair<Long, QuorumPeer.ServerState>>
+                    flatQuorumWithState,
+            final Collection<Collection<ImmutablePair<Long,
+                    QuorumPeer.ServerState>>>
+                    partitionedQuorumArg) throws ElectionException {
+
+
         return new EnsembleVoteView(parentEnsemble, quorumCnxMeshArg,
                 flatQuorumWithState, partitionedQuorumArg,
-                stableTimeout, stableTimeoutUnit, serversForEnsemble);
+                stableTimeout, stableTimeoutUnit, getServersForEnsemble());
     }
 
     @Override
@@ -371,8 +378,20 @@ public class EnsembleVoteView extends AbstractEnsemble {
             throw new RuntimeException(errStr);
         }
 
-        return new FLEV2BcastWrapper(sid, QuorumPeer.LearnerType.PARTICIPANT,
+        return createFLEWrapper(sid,
                 quorumVerifier, voteViewWrapper, voteViewWrapper, stableTimeout,
                 stableTimeoutUnit);
+    }
+
+    protected FLEV2Wrapper createFLEWrapper(
+            final long sid,
+            final QuorumVerifier quorumVerifier,
+            final VoteViewChange voteViewChange,
+            final VoteViewConsumerCtrl voteViewConsumerCtrl,
+            final int stableTimeout,
+            final TimeUnit stableTimeoutUnit) {
+        return new FLEV2BcastWrapper(sid, QuorumPeer.LearnerType.PARTICIPANT,
+                quorumVerifier, voteViewChange, voteViewConsumerCtrl,
+                stableTimeout, stableTimeoutUnit);
     }
 }

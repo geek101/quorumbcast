@@ -49,9 +49,9 @@ public class FLEV2CombValidLeaderElectTest extends FLEV2BaseTest {
     public static Collection quorumTypeAndSize() {
         return Arrays.asList( new Object [][] {
                 // type, quorum-size, stable-timeout, stable-timeout unit
-                { "mock", 3, 1, 0, 0, 0, 0, TimeUnit.MILLISECONDS },
-                { "mock", 5, 1, 0, 0, 0, 0, TimeUnit.MILLISECONDS },
-                { "mock", 7, 1, 0, 0, 0, 0, TimeUnit.MILLISECONDS },
+                //{ "mock", 3, 1, 0, 0, 0, 0, TimeUnit.MILLISECONDS },
+                //{ "mock", 5, 1, 0, 0, 0, 0, TimeUnit.MILLISECONDS },
+                //{ "mock", 7, 1, 0, 0, 0, 0, TimeUnit.MILLISECONDS },
                 { "mockbcast", 3, 50, 0, 0, 0, 0, TimeUnit.MILLISECONDS},
                 { "mockbcast", 5, 50, 0, 0, 0, 0, TimeUnit.MILLISECONDS},
                 { "quorumbcast", 3, 150, 150, 250, 50, 3,

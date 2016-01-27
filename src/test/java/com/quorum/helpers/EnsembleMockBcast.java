@@ -126,12 +126,16 @@ public class EnsembleMockBcast extends AbstractEnsemble {
         return flev2BcastWrapper;
     }
 
-    private FLEV2BcastWrapper createFLEV2BcastWrapper(
+    protected FLEV2BcastWrapper createFLEV2BcastWrapper(
             final long sid, final QuorumVerifier quorumVerifier) {
         final VoteViewMockBcast voteViewMockBcast
                 = new VoteViewMockBcast(sid, mockQuorumBcast);
         return new FLEV2BcastWrapper(sid, QuorumPeer.LearnerType.PARTICIPANT,
                 quorumVerifier, voteViewMockBcast,
                 voteViewMockBcast, stableTimeout, stableTimeoutUnit);
+    }
+
+    protected MockQuorumBcast getMockQuorumBcast() {
+        return mockQuorumBcast;
     }
 }

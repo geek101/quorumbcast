@@ -290,11 +290,29 @@ public abstract class AbstractEnsemble implements Ensemble {
 
         final HashMap<Long, HashSet<Long>> leaderQuorumMap = new HashMap<>();
 
+        for (final Vote vote : resultVotes.values()) {
+            if (vote.isLooker()) {
+                continue;
+            }
+
+            if (!leaderQuorumMap.containsKey(vote.getLeader())) {
+                leaderQuorumMap.put(vote.getLeader(),
+                        new HashSet<>(Collections.singletonList(
+                                vote.getSid())));
+            } else {
+                leaderQuorumMap.get(vote.getLeader())
+                        .add(vote.getSid());
+            }
+        }
+
         for (final FLEV2Wrapper fle : fles.values()) {
+            if (fle.getSelfVote().isLooker()) {
+                continue;
+            }
+
             if (!leaderQuorumMap.containsKey(fle.getSelfVote().getLeader())) {
                 leaderQuorumMap.put(fle.getSelfVote().getLeader(),
-                        new HashSet<>(
-                        Collections.singletonList(fle.getId())));
+                        new HashSet<>(Collections.singletonList(fle.getId())));
             } else {
                 leaderQuorumMap.get(fle.getSelfVote().getLeader())
                         .add(fle.getId());
@@ -458,8 +476,7 @@ public abstract class AbstractEnsemble implements Ensemble {
     private void collectLeaderLoopResultFutures() {
         for (final Map.Entry<Long, Integer> e
                 : getFleVisibleCountMap().entrySet()) {
-            HashMap<Long, Future<Vote>> resultMap =
-                    nonTerminatingFuturesMap;
+            HashMap<Long, Future<Vote>> resultMap = nonTerminatingFuturesMap;
             if (e.getValue() >= ((quorumSize / 2) + 1)) {
                  resultMap = terminatingFuturesMap;
             }
@@ -881,6 +898,17 @@ public abstract class AbstractEnsemble implements Ensemble {
     }
 
     /**
+     * Override this for FLE testing. Only FLEV2 uses this.
+     * @param vote
+     * @param visibleQuorumVoteCount
+     * @return
+     */
+    protected Vote setElectionEpoch(final Vote vote,
+                                    final long visibleQuorumVoteCount) {
+        return vote.setElectionEpoch(visibleQuorumVoteCount);
+    }
+
+    /**
      * If there is a leader and followers then coerce them according to
      * the following rules:
      * Leader and Followers have the same peerEpoch, leader has the highest
@@ -900,7 +928,7 @@ public abstract class AbstractEnsemble implements Ensemble {
         final Vote leaderVote = createVoteWithState(pair.getLeft(),
                 QuorumPeer.ServerState.LEADING).makeMeLeader(random);
         voteMap.put(leaderVote.getSid(),
-                leaderVote.setElectionEpoch(
+                setElectionEpoch(leaderVote,
                         fleVisibleCountMap.get(leaderVote.getSid())));
 
         Vote minZxidVote = null;
@@ -913,7 +941,7 @@ public abstract class AbstractEnsemble implements Ensemble {
                     = createVoteWithState(sid, QuorumPeer.ServerState.FOLLOWING)
                     .makeMeFollower(leaderVote, random);
 
-            voteMap.put(followerVote.getSid(), followerVote.setElectionEpoch(
+            voteMap.put(followerVote.getSid(), setElectionEpoch(followerVote,
                     fleVisibleCountMap.get(followerVote.getSid())));
             if (minZxidVote == null ||
                     minZxidVote.getZxid() > followerVote.getZxid()) {

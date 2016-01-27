@@ -454,11 +454,11 @@ public class FastLeaderElectionV2 implements Election {
         return this.stableTimeoutUnit;
     }
 
-    protected FastLeaderElectionV2Round couldTerminate() {
+    protected Object couldTerminate() {
         return suggestedForTermination;
     }
 
-    protected FastLeaderElectionV2Round getLastLookForLeader() {
+    protected Object getLastLookForLeader() {
         return lastLookForLeader;
     }
 

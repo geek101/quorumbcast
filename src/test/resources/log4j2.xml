@@ -17,6 +17,7 @@
         <logger name="com.quorum.netty.VotingChannel" level="WARN" />
         <logger name="com.quorum.netty.NettyChannel" level="WARN" />
         <logger name="com.quorum.nio.SelectorDispatch" level="WARN" />
-        <logger name="com.quorum.FastLeaderElectionV2" level="DEBUG" />2
+        <logger name="com.quorum.FastLeaderElectionV2" level="DEBUG" />
+        <logger name="com.quorum.helpers.FastLeaderElection" level="DEBUG" />
     </Loggers>
 </Configuration>

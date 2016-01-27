@@ -36,7 +36,7 @@ import java.util.concurrent.TimeUnit;
 
 public class FLEV2BcastWrapper extends AbstractFLEV2Wrapper {
     private static final Logger LOG
-            = LoggerFactory.getLogger(FLEV2BcastWrapper.class.getClass());
+            = LoggerFactory.getLogger(FLEV2BcastWrapper.class.getName());
     final QuorumVerifier quorumVerifier;
     final ExecutorService executorService;
     final FLEV2BcastWrapper self;

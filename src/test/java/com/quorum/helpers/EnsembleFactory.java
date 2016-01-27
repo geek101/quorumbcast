@@ -28,23 +28,33 @@ public class EnsembleFactory {
         } else if (type.compareToIgnoreCase("mockbcast") == 0) {
             return new EnsembleMockBcast(id, quorumSize, stableTimeout,
                     stableTimeUnit);
-        }
+        } else if (type.compareToIgnoreCase("flemockbcast") == 0) {
+            return new EnsembleFLEMockBcast(id, quorumSize, stableTimeout,
+                    stableTimeUnit);
+        } else if (type.compareToIgnoreCase("quorumbcast") == 0 ||
+                type.compareToIgnoreCase("quorumbcast-ssl") == 0) {
+            Boolean sslEnabled = false;
+            if (type.contains("ssl"))
+                sslEnabled = true;
 
-        Boolean sslEnabled = null;
-        if (type.compareToIgnoreCase("quorumbcast") == 0) {
-            sslEnabled = false;
-        } else if (type.compareToIgnoreCase("quorumbcast-ssl") == 0) {
-            sslEnabled = true;
-        }
-
-        if (sslEnabled != null) {
             return new EnsembleVoteView(id, quorumSize, stableTimeout,
                     stableTimeUnit, servers, readTimeoutMsec,
                     connectTimeoutMsec, keepAliveTimeoutMsec, keepAliveCount,
                     sslEnabled, keyStoreLocation, keyStorePassword,
                     trustStoreLocation, trustStorePassword, trustStoreCAAlias);
-        }
 
+        }   else if (type.compareToIgnoreCase("flequorumbcast") == 0 ||
+                type.compareToIgnoreCase("flequorumbcast-ssl") == 0) {
+            Boolean sslEnabled = false;
+            if (type.contains("ssl"))
+                sslEnabled = true;
+
+            return new EnsembleFLEVoteView(id, quorumSize, stableTimeout,
+                    stableTimeUnit, servers, readTimeoutMsec,
+                    connectTimeoutMsec, keepAliveTimeoutMsec, keepAliveCount,
+                    sslEnabled, keyStoreLocation, keyStorePassword,
+                    trustStoreLocation, trustStorePassword, trustStoreCAAlias);
+        }
         throw new IllegalArgumentException("invalid type: " + type);
     }
 }

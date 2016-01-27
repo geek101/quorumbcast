@@ -129,11 +129,7 @@ public class FastLeaderElectionV2Round {
             return null;
         }
 
-        if (LOG.isDebugEnabled()) {
-            for (final Vote v : voteMapArg.values()) {
-                LOG.debug("lookingElectionEpochConverge(): " + v);
-            }
-        }
+        debugPrintVotes("lookingElectionEpochConverge()", voteMapArg);
 
         Vote bestEpochVote = voteMapArg.get(getId());
 
@@ -209,11 +205,7 @@ public class FastLeaderElectionV2Round {
      */
     protected ImmutablePair<Vote, HashSet<Long>> leaderSuggestionRound(
             final HashMap<Long, Vote> voteMapArg) {
-        if (LOG.isDebugEnabled()) {
-            for (final Vote v : voteMapArg.values()) {
-                LOG.info("leaderFromView(): " + v);
-            }
-        }
+        debugPrintVotes("leaderFromView()", voteMapArg);
 
         final Collection<Vote> highestPeerEpochGroup =
                 getHighestPeerEpoch(voteMapArg);
@@ -411,12 +403,7 @@ public class FastLeaderElectionV2Round {
             if ((leaderVote.getState() == QuorumPeer.ServerState.LEADING &&
                     bestLeaderVote.getState() !=
                             QuorumPeer.ServerState.LEADING) ||
-                    leaderVote.getElectionEpoch()
-                            > bestLeaderVote.getElectionEpoch()
-                    ||
-                    (leaderVote.getElectionEpoch()
-                            == bestLeaderVote.getElectionEpoch() &&
-            totalOrderPredicate(leaderVote, bestLeaderVote))) {
+                    totalOrderPredicate(leaderVote, bestLeaderVote)) {
                 bestTotalOrder = voteCountSet;
             }
         }
@@ -559,5 +546,14 @@ public class FastLeaderElectionV2Round {
                 ((newEpoch == curEpoch) &&
                         ((newZxid > curZxid) || ((newZxid == curZxid) &&
                                 (newId > curId)))));
+    }
+
+    private void debugPrintVotes(final String str,
+                            final HashMap<Long, Vote> voteMapArg) {
+        if (LOG.isDebugEnabled()) {
+            for (final Vote v : voteMapArg.values()) {
+                LOG.info(str + ": " + v);
+            }
+        }
     }
 }
