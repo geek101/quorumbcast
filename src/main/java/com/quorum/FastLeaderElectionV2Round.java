@@ -168,37 +168,9 @@ public class FastLeaderElectionV2Round {
     }
 
     /**
-     * Run leader election using the given view and if no leader has been
-     * elected then update self as leader.
-     * The algorithm is from a given view of votes performs the following
-     * steps:
-     * <p>
-     * Step 1:
-     * Group votes by PeerEpoch and get the highest group by
-     * PeerEpoch. Lets call this highest group H(G(PZ)).
-     * <p>
-     * Step 2:
-     * Ref count leader from the given H(G(PZ)). We will consider leader
-     * votes if and only if we see the vote and the vote considers itself a
-     * leader. Sort this leader groups in descending order. Lets call this
-     * set of Leader votes along with votes which refer it as SL(H(G(PZ))
-     * <p>
-     * Step 3:
-     * Consider all leaders withs maximum votes, lets call it H(SL(H(G(PZ))))
-     * <p>
-     * Step 4:
-     * Go through each vote in H(SL(H(G(PZ))) use totalOrderPredicate() to
-     * pick the best among them. Call this TOP(H(SL(H(G(PZ)))
-     * <p>
-     * Step 5:
-     * If the picked best Leader has Quorum then we elect it as leader and
-     * exit FLEV2, if there is no Quorum then we catch up to this Leader and
-     * go back to wait loop, it will reenter if our Vote was perturbed by the
-     * above change and/or there was a change in the view.
-     *
+     * Run leader suggestion round.
      * @param voteMapArg
-     * @return Leader if elected and our vote modified if no quorum for
-     * elected leader found.
+     * @return suggested leader could be self vote.
      * @throws ElectionException
      * @throws InterruptedException
      * @throws ExecutionException

@@ -34,6 +34,8 @@ public class FLECompareFLEV2Test extends FLEV2BaseTest {
     @Parameterized.Parameters
     public static Collection quorumTypeAndSize() {
         return Arrays.asList( new Object [][] {
+                // type, stability-tout, read-tout, connect-tout,
+                // keep-alive-tout, keep-alive count, time unit for all
                 { "flemockbcast", 250, 0, 0, 0, 0, TimeUnit.MILLISECONDS},
                 { "flequorumbcast", 150, 150, 250, 50, 3,
                         TimeUnit.MILLISECONDS},
@@ -76,14 +78,13 @@ public class FLECompareFLEV2Test extends FLEV2BaseTest {
         final Ensemble parentEnsemble
                 = ensemble.configure("{1F,2F,3L}");
         final Ensemble movedEnsemble
-                = parentEnsemble.moveToLooking(3);
+                = parentEnsemble.moveToLooking(1);
         final Ensemble doneEnsemble
                 = movedEnsemble.runLooking();
 
         doneEnsemble.verifyLeaderAfterShutDown();
         verifyPrintHelper(parentEnsemble, movedEnsemble, doneEnsemble);
     }
-
 
     @Test (timeout = 20000)
     public void test2_PartitionJoinLeader() throws ElectionException,

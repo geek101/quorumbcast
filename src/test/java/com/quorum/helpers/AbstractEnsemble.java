@@ -288,7 +288,8 @@ public abstract class AbstractEnsemble implements Ensemble {
             return;
         }
 
-        final HashMap<Long, HashSet<Long>> leaderQuorumMap = new HashMap<>();
+        final HashMap<Long, HashMap<Long, Vote>> leaderQuorumMap = new
+                HashMap<>();
 
         for (final Vote vote : resultVotes.values()) {
             if (vote.isLooker()) {
@@ -296,12 +297,12 @@ public abstract class AbstractEnsemble implements Ensemble {
             }
 
             if (!leaderQuorumMap.containsKey(vote.getLeader())) {
-                leaderQuorumMap.put(vote.getLeader(),
-                        new HashSet<>(Collections.singletonList(
-                                vote.getSid())));
+                HashMap<Long, Vote> h = new HashMap<>();
+                h.put(vote.getSid(), vote);
+                leaderQuorumMap.put(vote.getLeader(), h);
             } else {
                 leaderQuorumMap.get(vote.getLeader())
-                        .add(vote.getSid());
+                        .put(vote.getSid(), vote);
             }
         }
 
@@ -310,12 +311,17 @@ public abstract class AbstractEnsemble implements Ensemble {
                 continue;
             }
 
-            if (!leaderQuorumMap.containsKey(fle.getSelfVote().getLeader())) {
-                leaderQuorumMap.put(fle.getSelfVote().getLeader(),
-                        new HashSet<>(Collections.singletonList(fle.getId())));
+            final Vote vote = fle.getSelfVote();
+            if (!leaderQuorumMap.containsKey(vote.getLeader())) {
+                HashMap<Long, Vote> h = new HashMap<>();
+                h.put(vote.getSid(), vote);
+                leaderQuorumMap.put(vote.getLeader(), h);
             } else {
-                leaderQuorumMap.get(fle.getSelfVote().getLeader())
-                        .add(fle.getId());
+                if (!leaderQuorumMap.get(vote.getLeader()).containsKey(
+                        vote.getSid())) {
+                    leaderQuorumMap.get(vote.getLeader())
+                            .put(vote.getSid(), vote);
+                }
             }
         }
 
@@ -323,12 +329,12 @@ public abstract class AbstractEnsemble implements Ensemble {
     }
 
     private void verifyLeaderInQuorum(
-            final HashMap<Long, HashSet<Long>> leaderQuorumMap) {
+            final HashMap<Long, HashMap<Long, Vote>> leaderQuorumMap) {
         int max = Integer.MIN_VALUE;
         long secondBestLeaderSid = Integer.MIN_VALUE;
         long bestLeaderSid = Integer.MIN_VALUE;
 
-        for (final Map.Entry<Long, HashSet<Long>> entry
+        for (final Map.Entry<Long, HashMap<Long, Vote>> entry
                 : leaderQuorumMap.entrySet()) {
             if (entry.getValue().size() > max) {
                 max = entry.getValue().size();
@@ -337,7 +343,8 @@ public abstract class AbstractEnsemble implements Ensemble {
             }
         }
 
-        if (!quorumVerifier.containsQuorum(leaderQuorumMap.get(bestLeaderSid))) {
+        if (!quorumVerifier.containsQuorumFromCount(leaderQuorumMap.get
+                (bestLeaderSid).size())) {
             final String errStr = "Desired leader: " + bestLeaderSid
                     + " has no quorum: "
                     + leaderQuorumMap.get(bestLeaderSid).size();
@@ -347,8 +354,8 @@ public abstract class AbstractEnsemble implements Ensemble {
         }
 
         // Verify safety of votes for the quorum that is moving forward
-        for (final Long sid : leaderQuorumMap.get(bestLeaderSid)) {
-            verifySafetyPredicate(fles.get(sid).getSelfVote());
+        for (final Vote vote : leaderQuorumMap.get(bestLeaderSid).values()) {
+            verifySafetyPredicate(vote);
         }
 
         /**
