@@ -37,8 +37,7 @@ public class FLECompareFLEV2Test extends FLEV2BaseTest {
                 // type, stability-tout, read-tout, connect-tout,
                 // keep-alive-tout, keep-alive count, time unit for all
                 { "flemockbcast", 250, 0, 0, 0, 0, TimeUnit.MILLISECONDS},
-                { "flequorumbcast", 150, 150, 250, 50, 3,
-                        TimeUnit.MILLISECONDS},
+                { "flequorumbcast", 150, 150, 250, 50, 3, TimeUnit.MILLISECONDS},
                 { "mockbcast", 250, 0, 0, 0, 0, TimeUnit.MILLISECONDS},
                 { "quorumbcast", 150, 150, 250, 50, 3, TimeUnit.MILLISECONDS},
         });
@@ -109,6 +108,21 @@ public class FLECompareFLEV2Test extends FLEV2BaseTest {
                 = ensemble.configure("{{1k, 2K}, {1K, 3K}, {1K, 4K}, {5K}}");
         final Ensemble movedEnsemble
                 = parentEnsemble.moveToLooking(1);
+        final Ensemble doneEnsemble
+                = movedEnsemble.runLooking();
+
+        doneEnsemble.verifyLeaderAfterShutDown();
+        verifyPrintHelper(parentEnsemble, movedEnsemble, doneEnsemble);
+    }
+
+    @Test (timeout = 20000)
+    public void test3_PartitionBestShouldJoinEnsemble()
+            throws ElectionException, InterruptedException, ExecutionException {
+        final Ensemble ensemble = createEnsemble(1L, 5);
+        final Ensemble parentEnsemble
+                = ensemble.configure("{{1k, 2K}, {1K, 3F, 4L, 5F}}");
+        final Ensemble movedEnsemble
+                = parentEnsemble.moveToLooking(2);
         final Ensemble doneEnsemble
                 = movedEnsemble.runLooking();
 

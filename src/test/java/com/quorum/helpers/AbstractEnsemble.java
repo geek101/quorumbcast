@@ -600,7 +600,7 @@ public abstract class AbstractEnsemble implements Ensemble {
         String nodeStr = "";
         for (int i = idx; i < quorumStr.length(); i++) {
             if (quorumStr.charAt(idx) == '{') {
-                i = configureParser(quorumStr, i+1, new HashSet<>(),
+                i = configureParser(quorumStr, i+1, new HashSet<Long>(),
                         quorumCnxMeshArg,
                         flatResult, partitionResult);
             } else if (quorumStr.charAt(i) == '}') {
@@ -873,7 +873,7 @@ public abstract class AbstractEnsemble implements Ensemble {
             throw new IllegalAccessError("Ensemble: " + id + " not in " +
                     "configured state.");
         }
-        final ImmutablePair<Map<Long, Vote>, Vote> learnerVotePair =
+        final ImmutablePair<HashMap<Long, Vote>, Vote> learnerVotePair =
                 coerceLearnerVotes();
         final Map<Long, Vote> followingVoteMap = coerceLookingVotes(
                 learnerVotePair.getRight());
@@ -922,16 +922,16 @@ public abstract class AbstractEnsemble implements Ensemble {
      * Zxid and followers have zxid upto leader's but cannot exceed.
      * @return Pair of LeaderVote and MinZxidFollowerVote or pair of null, null
      */
-    private ImmutablePair<Map<Long, Vote>, Vote> coerceLearnerVotes() {
+    private ImmutablePair<HashMap<Long, Vote>, Vote> coerceLearnerVotes() {
         final ImmutablePair<Long, HashSet<Long>> pair
                 = getLeaderQuorumFromFlatServerState();
         if (pair.getLeft() == Long.MIN_VALUE) {
-            return ImmutablePair.of(new HashMap<>(), null);
+            return ImmutablePair.of(new HashMap<Long, Vote>(), null);
         }
 
         final HashMap<Long, Integer> fleVisibleCountMap =
                 getFleVisibleCountMap();
-        final Map<Long, Vote> voteMap = new HashMap<>();
+        final HashMap<Long, Vote> voteMap = new HashMap<>();
         final Vote leaderVote = createVoteWithState(pair.getLeft(),
                 QuorumPeer.ServerState.LEADING).makeMeLeader(random);
         voteMap.put(leaderVote.getSid(),

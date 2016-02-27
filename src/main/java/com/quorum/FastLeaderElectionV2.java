@@ -72,7 +72,8 @@ public class FastLeaderElectionV2 implements Election {
         this.LOG = new LogPrefix(LOGS, "mySid:" + this.mySid +
                 "-electionEpoch:0");
         this.random.setSeed(System.nanoTime() ^ this.mySid);
-        waitForLookRunFuture.set(CompletableFuture.completedFuture(null));
+        waitForLookRunFuture.set(
+                CompletableFuture.completedFuture((Collection<Vote>)null));
     }
 
     /**

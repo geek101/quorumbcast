@@ -18,12 +18,9 @@ package com.quorum.helpers;
 import com.quorum.QuorumBroadcast;
 import com.quorum.Vote;
 import com.quorum.VoteView;
-import com.sun.xml.internal.ws.policy.privateutil.PolicyUtils;
-import com.sun.xml.internal.ws.util.CompletedFuture;
 import io.netty.channel.EventLoopGroup;
 
 import java.net.InetSocketAddress;
-import java.util.Collections;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.Future;
 

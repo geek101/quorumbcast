@@ -119,7 +119,8 @@ public class FastLeaderElection implements Election {
         this.proposedZxid = -1;
         this.LOG = new LogPrefix(LOGS, "mySid:" + this.mySid +
                 "-electionEpoch:0");
-        waitForLookRunFuture.set(CompletableFuture.completedFuture(null));
+        waitForLookRunFuture.set(
+                CompletableFuture.completedFuture((Collection<Vote>)null));
     }
 
     private void leaveInstance(Vote v) throws InterruptedException,
