@@ -6,18 +6,18 @@
         </Console>
     </Appenders>
     <Loggers>
-        <Root level="INFO">
+        <Root level="ERROR">
             <AppenderRef ref="CONSOLE"/>
         </Root>
         <logger name="io.netty.handler.ssl.SslHandler" level="ERROR" />
-        <logger name="com.quorum.netty.VotingChannelMgr" level="WARN" />
-        <logger name="com.quorum.netty.NettyChannelMgr" level="WARN" />
-        <logger name="com.quorum.netty.VotingClientChannel" level="WARN" />
-        <logger name="com.quorum.netty.VotingServerChannel" level="WARN" />
-        <logger name="com.quorum.netty.VotingChannel" level="WARN" />
-        <logger name="com.quorum.netty.NettyChannel" level="WARN" />
-        <logger name="com.quorum.nio.SelectorDispatch" level="WARN" />
-        <logger name="com.quorum.FastLeaderElectionV2" level="DEBUG" />
-        <logger name="com.quorum.helpers.FastLeaderElection" level="DEBUG" />
+        <logger name="com.quorum.netty.VotingChannelMgr" level="ERROR" />
+        <logger name="com.quorum.netty.NettyChannelMgr" level="ERROR" />
+        <logger name="com.quorum.netty.VotingClientChannel" level="ERROR" />
+        <logger name="com.quorum.netty.VotingServerChannel" level="ERROR" />
+        <logger name="com.quorum.netty.VotingChannel" level="ERROR" />
+        <logger name="com.quorum.netty.NettyChannel" level="ERROR" />
+        <logger name="com.quorum.nio.SelectorDispatch" level="ERROR" />
+        <logger name="com.quorum.FastLeaderElectionV2" level="ERROR" />
+        <logger name="com.quorum.helpers.FastLeaderElection" level="ERROR" />
     </Loggers>
 </Configuration>
